@@ -7,10 +7,10 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ---------- CONFIG ----------
-TELEGRAM_TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")  # Set this in Render Environment
-OPENAI_API_KEY = os.getenv("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")  # Set this in Render Environment
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")  # Set this in Render Environment
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")  # Set this in Render Environment
 PORTFOLIO_FILE = "portfolio.json"
-CHAT_ID = os.getenv("900323721")  # Your Telegram user ID or group
+CHAT_ID = os.getenv("CHAT_ID")  # Your Telegram user ID or group
 
 openai.api_key = OPENAI_API_KEY
 
