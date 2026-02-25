@@ -1,8 +1,8 @@
 python-telegram-bot==20.7
 feedparser
-openai
+openai==1.30.0
 requests
 beautifulsoup4
 pandas
-yfinance
+yfinance==0.2.40
 apscheduler
