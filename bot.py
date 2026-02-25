@@ -110,19 +110,19 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     symbol = context.args[0].upper()
 
     # 1️⃣ Get Weekly Price
-try:
-    import time
-    time.sleep(2)
+    try:
+        data = yf.download(symbol, period="7d", interval="1d")
+        open_price = data["Open"][0]
+        close_price = data["Close"][-1]
 
-    data = yf.download(symbol, period="5d", threads=False)
-
-    if data.empty:
-        await update.message.reply_text("Could not fetch stock data (Rate limited). Try later.")
-        return
-
-except Exception as e:
-    await update.message.reply_text("Stock API temporarily blocked. Try again later.")
-    return
+        if close_price > open_price:
+            bias = "Bullish"
+        elif close_price < open_price:
+            bias = "Bearish"
+        else:
+            bias = "Neutral"
+    except:
+        bias = "Unknown"
 
     # 2️⃣ Get News Headlines
     feed = feedparser.parse(f"https://news.google.com/rss/search?q={symbol}+stock")
