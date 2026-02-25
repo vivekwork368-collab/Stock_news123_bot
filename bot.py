@@ -1,18 +1,22 @@
-import os
+  import os
 import requests
 import yfinance as yf
 import openai
+import time
+from datetime import datetime, timedelta
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ---------------- CONFIG ----------------
 TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"
-NEWS_API_KEY = "c5fb0e2299814a2aa8b79cbf26cbab74"  # NewsAPI key
-OPENAI_API_KEY = "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" # OpenAI API key
+NEWS_API_KEY = "c5fb0e2299814a2aa8b79cbf26cbab74"
+OPENAI_API_KEY = "sk-proj-D_3aVBvNn4C4UxPiBCuGZVadH2u58DcfGyn3OLAw-Id-6ZFmLfqC12ZspA4Ku3gzjgmDvYHv9ET3BlbkFJ7_qjNrVL74PidFlWEM-fqHozI-HzqXcd9"
 PORTFOLIO_FILE = "portfolio.txt"
-NEWS_PER_STOCK = 2
+NEWS_PER_STOCK = 5  # fetch 5 recent news
+CACHE_DURATION = 1800  # 30 minutes
 
 openai.api_key = OPENAI_API_KEY
+news_cache = {}
 
 # ---------------- HELPERS ----------------
 def load_portfolio():
@@ -34,14 +38,21 @@ def fetch_stock_sector(stock_symbol):
     except:
         return "General"
 
-def fetch_news(query, max_articles=2):
-    url = f"https://newsapi.org/v2/everything?q={query}&sortBy=publishedAt&language=en&pageSize={max_articles}&apiKey={NEWS_API_KEY}"
+def fetch_news(query, max_articles=5):
+    now = time.time()
+    if query in news_cache and now - news_cache[query]["time"] < CACHE_DURATION:
+        return news_cache[query]["summary"]
+
+    from_date = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
+    url = f"https://newsapi.org/v2/everything?q={query}&from={from_date}&sortBy=publishedAt&language=en&pageSize={max_articles}&apiKey={NEWS_API_KEY}"
     try:
         res = requests.get(url)
         data = res.json()
         if data.get("status") != "ok" or not data.get("articles"):
             return []
-        return [article.get("title", "") + ". " + article.get("description", "") for article in data["articles"]]
+        news_list = [article.get("title","") + ". " + article.get("description","") for article in data["articles"]]
+        news_cache[query] = {"time": now, "summary": news_list}
+        return news_list
     except:
         return []
 
@@ -49,22 +60,33 @@ def summarize_news_ai(news_text):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": f"Summarize this news in 2-3 lines:\n{news_text}"}],
+            messages=[{"role": "user", "content": f"Summarize this news in 2–3 lines:\n{news_text}"}],
             temperature=0.5,
             max_tokens=120
         )
-        summary = response.choices[0].message.content.strip()
-        return summary
-    except Exception as e:
-        print("OpenAI summarization error:", e)
-        # fallback: truncate
+        return response.choices[0].message.content.strip()
+    except:
         return news_text[:300]
+
+def analyze_sentiment_ai(news_summaries):
+    combined_text = "\n".join(news_summaries)
+    prompt = f"Analyze the overall market sentiment from this news for the next month: Bullish, Bearish, or Neutral. Give only one word:\n{combined_text}"
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.0,
+            max_tokens=10
+        )
+        return response.choices[0].message.content.strip()
+    except:
+        return "Neutral"
 
 # ---------------- COMMAND HANDLERS ----------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🤖 Personal Portfolio Bot Started!\n"
-        "Use /add STOCK to add, /remove STOCK to remove, /mylist to view portfolio, /news to get stock news."
+        "Use /add STOCK to add, /remove STOCK to remove, /mylist to view portfolio, /news to get stock news and sentiment."
     )
 
 async def mylist(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,21 +132,23 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for stock in stocks:
         sector = fetch_stock_sector(stock)
         stock_news = fetch_news(stock, NEWS_PER_STOCK)
-        sector_news = fetch_news(sector, 1)
+        sector_news = fetch_news(sector, 2)
 
         if stock_news:
-            messages.append(f"📰 {stock} news:")
-            for n in stock_news:
-                summary = summarize_news_ai(n)
-                messages.append(f"• {summary}")
-        else:
-            messages.append(f"⚠️ No news found for {stock}.")
+            messages.append(f"📰 {stock} news summary:")
+            summarized_stock_news = [summarize_news_ai(n) for n in stock_news]
+            for s in summarized_stock_news:
+                messages.append(f"• {s}")
+            sentiment = analyze_sentiment_ai(summarized_stock_news)
+            messages.append(f"📊 Monthly Sentiment: {sentiment}")
 
         if sector_news:
-            messages.append(f"💼 {sector} sector news:")
-            for n in sector_news:
-                summary = summarize_news_ai(n)
-                messages.append(f"• {summary}")
+            messages.append(f"💼 {sector} sector news summary:")
+            summarized_sector_news = [summarize_news_ai(n) for n in sector_news]
+            for s in summarized_sector_news:
+                messages.append(f"• {s}")
+            sentiment_sector = analyze_sentiment_ai(summarized_sector_news)
+            messages.append(f"📊 Sector Monthly Sentiment: {sentiment_sector}")
 
     CHUNK_SIZE = 4000
     text = "\n".join(messages)
@@ -143,4 +167,4 @@ def main():
     app.run_polling()
 
 if __name__ == "__main__":
-    main()
+    main()      
