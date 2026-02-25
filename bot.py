@@ -104,13 +104,23 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # ANALYZE COMMAND
 async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
+    if not context.args:
+        await update.message.reply_text("Please provide a stock symbol.")
+        return
+
     symbol = context.args[0].upper()
 
-    headlines = "Some news"
+    headlines = "Sample headlines here"
 
-async def analyze(...):
-    symbol = ...
-    final_text = ...
+    final_text = f"""
+Stock: {symbol}
+
+Recent News:
+{headlines}
+
+Outlook: Neutral
+"""
+
     await update.message.reply_text(final_text)
 
     # 1️⃣ Get Weekly Price
