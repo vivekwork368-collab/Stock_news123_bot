@@ -161,9 +161,10 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # =========================
 import asyncio
+import os
 
 PORT = int(os.environ.get("PORT", 10000))
-RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
 
 app = ApplicationBuilder().token(TOKEN).build()
 
@@ -176,15 +177,17 @@ app.add_handler(CommandHandler("analyze", analyze))
 
 async def main():
     await app.initialize()
-    await app.start()
-
-    webhook_url = f"{RENDER_EXTERNAL_URL}"
+    
+    # Set webhook URL
+    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
     await app.bot.set_webhook(webhook_url)
 
+    # Start webhook server
     await app.run_webhook(
         listen="0.0.0.0",
         port=PORT,
-        webhook_url=webhook_url
+        webhook_url=webhook_url,
+        url_path="webhook"
     )
 
 asyncio.run(main())
