@@ -8,9 +8,9 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ---------------- CONFIG ----------------
-TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"
-NEWS_API_KEY = "c5fb0e2299814a2aa8b79cbf26cbab74"
-OPENAI_API_KEY = "sk-proj-D_3aVBvNn4C4UxPiBCuGZVadH2u58DcfGyn3OLAw-Id-6ZFmLfqC12ZspA4Ku3gzjgmDvYHv9ET3BlbkFJ7_qjNrVL74PidFlWEM-fqHozI-HzqXcd9"
+TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")
+NEWS_API_KEY = os.getenv("c5fb0e2299814a2aa8b79cbf26cbab74")
+OPENAI_API_KEY = os.getenv("sk-proj-D_3aVBvNn4C4UxPiBCuGZVadH2u58DcfGyn3OLAw-Id-6ZFmLfqC12ZspA4Ku3gzjgmDvYHv9ET3BlbkFJ7_qjNrVL74PidFlWEM-fqHozI-HzqXcd9")
 PORTFOLIO_FILE = "portfolio.txt"
 NEWS_PER_STOCK = 5  # fetch 5 recent news
 CACHE_DURATION = 1800  # 30 minutes
