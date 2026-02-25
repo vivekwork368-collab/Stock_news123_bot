@@ -3,3 +3,6 @@ flask
 requests
 openai
 feedparser
+yfinance
+pandas
+numpy
