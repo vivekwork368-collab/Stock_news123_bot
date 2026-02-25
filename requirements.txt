@@ -1,4 +1,8 @@
 python-telegram-bot==20.7
-yfinance
-requests
+feedparser
 openai
+requests
+beautifulsoup4
+pandas
+yfinance
+apscheduler
