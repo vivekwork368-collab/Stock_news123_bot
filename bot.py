@@ -106,16 +106,11 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     symbol = context.args[0].upper()
 
-    headlines = "Example news"
+    headlines = "Some news"
 
-    final_text = f"""
-Stock: {symbol}
-
-{headlines}
-
-Bullish or Bearish: Neutral
-"""
-
+async def analyze(...):
+    symbol = ...
+    final_text = ...
     await update.message.reply_text(final_text)
 
     # 1️⃣ Get Weekly Price
