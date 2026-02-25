@@ -1,19 +1,18 @@
 import os
 import json
 import feedparser
-from telegram import Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
 from apscheduler.schedulers.background import BackgroundScheduler
 import openai
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 
 # ---------- CONFIG ----------
-TELEGRAM_TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")  # Set in Render environment
-OPENAI_API_KEY = os.getenv("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")  # Set in Render environment
+TELEGRAM_TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")  # Set this in Render Environment
+OPENAI_API_KEY = os.getenv("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")  # Set this in Render Environment
 PORTFOLIO_FILE = "portfolio.json"
-CHAT_ID = os.getenv("900323721")  # Set your own ID in environment
+CHAT_ID = os.getenv("900323721")  # Your Telegram user ID or group
 
 openai.api_key = OPENAI_API_KEY
-bot = Bot(token=TELEGRAM_TOKEN)
 
 # ---------- UTILS ----------
 def load_portfolio():
@@ -27,8 +26,6 @@ def load_portfolio():
 def save_portfolio(portfolio):
     with open(PORTFOLIO_FILE, "w") as f:
         json.dump(portfolio, f)
-
-# ... rest of your bot code remains the same ...
 
 def fetch_news(query, count=5):
     news = []
@@ -71,7 +68,7 @@ def aggregate_sentiment(sentiments):
     if total == 0: return "No sentiment data"
     return {k: f"{v/total*100:.0f}%" for k,v in counts.items()}
 
-# ---------- TELEGRAM HANDLERS ----------
+# ---------- TELEGRAM COMMANDS ----------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Welcome! Use /add, /remove, /portfolio to manage stocks.\n"
@@ -130,8 +127,8 @@ async def get_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         agg = aggregate_sentiment(sentiments)
         await update.message.reply_text(f"*{stock} Monthly Sentiment:*\n{agg}", parse_mode="Markdown")
 
-# ---------- DAILY REPORT ----------
-async def daily_report(context: ContextTypes.DEFAULT_TYPE):
+# ---------- DAILY SENTIMENT REPORT ----------
+async def daily_report():
     portfolio = load_portfolio()
     if not portfolio: return
     for stock in portfolio:
@@ -145,11 +142,17 @@ async def daily_report(context: ContextTypes.DEFAULT_TYPE):
                 sentiments.append(result.split("Sentiment:")[1].strip())
         agg = aggregate_sentiment(sentiments)
         report_msg += f"*Aggregated Monthly Sentiment:*\n{agg}"
-        await context.bot.send_message(chat_id=CHAT_ID, text=report_msg, parse_mode="Markdown")
+        # Send via bot
+        app = context.bot_data.get("app")
+        if app:
+            await app.bot.send_message(chat_id=CHAT_ID, text=report_msg, parse_mode="Markdown")
 
 # ---------- MAIN ----------
-def main():
+if __name__ == "__main__":
     app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+
+    # Store app reference for daily report
+    app.bot_data["app"] = app
 
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_stock))
@@ -157,11 +160,9 @@ def main():
     app.add_handler(CommandHandler("portfolio", show_portfolio))
     app.add_handler(CommandHandler("news", get_news))
 
-    # Use job_queue for daily report at 9:00 AM
-    app.job_queue.run_daily(daily_report, time=datetime.time(hour=9, minute=0))
+    # Schedule daily report at 9:00 AM
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(lambda: app.create_task(daily_report()), 'cron', hour=9, minute=0)
+    scheduler.start()
 
     app.run_polling()
-
-if __name__ == "__main__":
-    import datetime
-    main()
