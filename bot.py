@@ -1,21 +1,18 @@
-import os
-import json
-import feedparser
 from telegram import Update, Bot
-from telegram.ext import Updater, CommandHandler, CallbackContext
+from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
+import os, json, feedparser, openai
 from apscheduler.schedulers.background import BackgroundScheduler
-import openai
 
-# ---------------- CONFIG ----------------
-TELEGRAM_TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"
-OPENAI_API_KEY = "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"
+# ---------- CONFIG ----------
+TELEGRAM_TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")
+OPENAI_API_KEY = os.getenv("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")
 PORTFOLIO_FILE = "portfolio.json"
-CHAT_ID = "900323721"  # can be your own ID or group
+CHAT_ID = os.getenv("900323721")
 
 openai.api_key = OPENAI_API_KEY
 bot = Bot(token=TELEGRAM_TOKEN)
 
-# ---------------- UTILITIES ----------------
+# ---------- UTILS ----------
 def load_portfolio():
     if not os.path.exists(PORTFOLIO_FILE):
         with open(PORTFOLIO_FILE, "w") as f:
@@ -35,27 +32,21 @@ def fetch_news(query, count=5):
         f"https://finance.yahoo.com/rss/headline?s={query}"
     ]
     for url in rss_urls:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:count]:
-                news.append(f"{entry.title}\n{entry.link}")
-        except Exception:
-            continue
+        feed = feedparser.parse(url)
+        for entry in feed.entries[:count]:
+            news.append(f"{entry.title}\n{entry.link}")
     return news
 
-def summarize_and_analyze(text, stock):
-    """
-    Summarizes news in 2–3 bullet points and gives monthly sentiment
-    """
+async def summarize_and_analyze(text, stock):
     try:
         response = openai.ChatCompletion.create(
             model="gpt-3.5-turbo",
             messages=[{
                 "role": "user",
                 "content": (
-                    f"Summarize this news in 2-3 concise bullet points:\n{text}\n\n"
+                    f"Summarize this news in 2-3 bullet points:\n{text}\n\n"
                     f"Then provide market sentiment for the stock {stock} for the monthly timeframe "
-                    f"(Bullish / Bearish / Neutral). Format as:\n"
+                    f"(Bullish / Bearish / Neutral). Format your response as:\n"
                     f"Summary:\n- ...\nSentiment: ..."
                 )
             }],
@@ -66,7 +57,7 @@ def summarize_and_analyze(text, stock):
         return f"Error summarizing/analyzing: {e}"
 
 def aggregate_sentiment(sentiments):
-    counts = {"Bullish": 0, "Bearish": 0, "Neutral": 0}
+    counts = {"Bullish":0, "Bearish":0, "Neutral":0}
     for s in sentiments:
         if "Bullish" in s: counts["Bullish"] += 1
         elif "Bearish" in s: counts["Bearish"] += 1
@@ -75,67 +66,68 @@ def aggregate_sentiment(sentiments):
     if total == 0: return "No sentiment data"
     return {k: f"{v/total*100:.0f}%" for k,v in counts.items()}
 
-# ---------------- TELEGRAM COMMANDS ----------------
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text(
+# ---------- TELEGRAM HANDLERS ----------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
         "Welcome! Use /add, /remove, /portfolio to manage stocks.\n"
         "Get news with /news. Daily sentiment report will be sent automatically."
     )
 
-def add_stock(update: Update, context: CallbackContext):
+async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     portfolio = load_portfolio()
     if not context.args:
-        update.message.reply_text("Provide stock/sector to add, e.g. /add RELIANCE")
+        await update.message.reply_text("Provide stock/sector to add, e.g. /add RELIANCE")
         return
     stock = " ".join(context.args).upper()
     if stock not in portfolio:
         portfolio.append(stock)
         save_portfolio(portfolio)
-        update.message.reply_text(f"Added {stock} to your portfolio.")
+        await update.message.reply_text(f"Added {stock} to your portfolio.")
     else:
-        update.message.reply_text(f"{stock} is already in your portfolio.")
+        await update.message.reply_text(f"{stock} is already in your portfolio.")
 
-def remove_stock(update: Update, context: CallbackContext):
+async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     portfolio = load_portfolio()
     if not context.args:
-        update.message.reply_text("Provide stock/sector to remove, e.g. /remove TECH")
+        await update.message.reply_text("Provide stock/sector to remove, e.g. /remove TECH")
         return
     stock = " ".join(context.args).upper()
     if stock in portfolio:
         portfolio.remove(stock)
         save_portfolio(portfolio)
-        update.message.reply_text(f"Removed {stock} from your portfolio.")
+        await update.message.reply_text(f"Removed {stock} from your portfolio.")
     else:
-        update.message.reply_text(f"{stock} is not in your portfolio.")
+        await update.message.reply_text(f"{stock} is not in your portfolio.")
 
-def show_portfolio(update: Update, context: CallbackContext):
+async def show_portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     portfolio = load_portfolio()
     if portfolio:
-        update.message.reply_text("Your portfolio:\n" + "\n".join(portfolio))
+        await update.message.reply_text("Your portfolio:\n" + "\n".join(portfolio))
     else:
-        update.message.reply_text("Your portfolio is empty. Add stocks using /add command.")
+        await update.message.reply_text("Your portfolio is empty. Add stocks using /add command.")
 
-def get_news(update: Update, context: CallbackContext):
+async def get_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     portfolio = load_portfolio()
     if not portfolio:
-        update.message.reply_text("Portfolio is empty. Add stocks using /add")
+        await update.message.reply_text("Portfolio is empty. Add stocks using /add")
         return
     for stock in portfolio:
         news_list = fetch_news(stock)
         if not news_list:
-            update.message.reply_text(f"No news found for {stock}")
+            await update.message.reply_text(f"No news found for {stock}")
             continue
         sentiments = []
         for news_item in news_list:
-            result = summarize_and_analyze(news_item, stock)
-            update.message.reply_text(f"*{stock}*\n{result}", parse_mode="Markdown")
+            result = await summarize_and_analyze(news_item, stock)
+            await update.message.reply_text(f"*{stock}*\n{result}", parse_mode="Markdown")
             if "Sentiment:" in result:
                 sentiments.append(result.split("Sentiment:")[1].strip())
         agg = aggregate_sentiment(sentiments)
-        update.message.reply_text(f"*{stock} Monthly Sentiment:*\n{agg}", parse_mode="Markdown")
+        await update.message.reply_text(f"*{stock} Monthly Sentiment:*\n{agg}", parse_mode="Markdown")
 
-# ---------------- DAILY REPORT ----------------
+# ---------- DAILY REPORT ----------
 def daily_report():
+    import asyncio
     portfolio = load_portfolio()
     if not portfolio: return
     for stock in portfolio:
@@ -143,32 +135,29 @@ def daily_report():
         sentiments = []
         report_msg = f"*{stock} News Summary & Sentiment:*\n"
         for news_item in news_list:
-            result = summarize_and_analyze(news_item, stock)
+            result = asyncio.run(summarize_and_analyze(news_item, stock))
             report_msg += result + "\n\n"
             if "Sentiment:" in result:
                 sentiments.append(result.split("Sentiment:")[1].strip())
         agg = aggregate_sentiment(sentiments)
-        report_msg += f"*Aggregated Monthly Sentiment:*\n{agg}"
         bot.send_message(chat_id=CHAT_ID, text=report_msg, parse_mode="Markdown")
 
-# ---------------- MAIN ----------------
+# ---------- MAIN ----------
 def main():
-    updater = Updater(TELEGRAM_TOKEN)
-    dp = updater.dispatcher
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
 
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("add", add_stock))
-    dp.add_handler(CommandHandler("remove", remove_stock))
-    dp.add_handler(CommandHandler("portfolio", show_portfolio))
-    dp.add_handler(CommandHandler("news", get_news))
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_stock))
+    app.add_handler(CommandHandler("remove", remove_stock))
+    app.add_handler(CommandHandler("portfolio", show_portfolio))
+    app.add_handler(CommandHandler("news", get_news))
 
-    # Schedule daily report at 9:00 AM
+    # Scheduler for daily report
     scheduler = BackgroundScheduler()
     scheduler.add_job(daily_report, 'cron', hour=9, minute=0)
     scheduler.start()
 
-    updater.start_polling()
-    updater.idle()
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
