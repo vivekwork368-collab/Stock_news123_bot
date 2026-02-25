@@ -1,207 +1,149 @@
 import os
-import sqlite3
+import json
+import requests
 import feedparser
 import yfinance as yf
-from openai import OpenAI
+from flask import Flask
+from threading import Thread
 from telegram import Update
-from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
-
-# =========================
-# ENV VARIABLES
-# =========================
-TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-
-if not TOKEN:
-    raise ValueError("TELEGRAM_TOKEN is missing!")
-
-client = OpenAI(api_key=OPENAI_API_KEY)
-
-# =========================
-# DATABASE SETUP
-# =========================
-conn = sqlite3.connect("stocks.db", check_same_thread=False)
-cursor = conn.cursor()
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS stocks (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    symbol TEXT UNIQUE
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
 )
-""")
-conn.commit()
 
-# =========================
-# COMMANDS
-# =========================
+# ==============================
+# CONFIG
+# ==============================
+
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+
+STOCK_FILE = "stocks.json"
+
+# ==============================
+# SIMPLE DATABASE (JSON FILE)
+# ==============================
+
+def load_stocks():
+    if not os.path.exists(STOCK_FILE):
+        return []
+    with open(STOCK_FILE, "r") as f:
+        return json.load(f)
+
+def save_stocks(stocks):
+    with open(STOCK_FILE, "w") as f:
+        json.dump(stocks, f)
+
+# ==============================
+# TELEGRAM COMMANDS
+# ==============================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("📈 Stock Intelligence Bot is running!")
+    await update.message.reply_text(
+        "📈 Stock Bot Running!\n\n"
+        "Commands:\n"
+        "/add <symbol>\n"
+        "/remove <symbol>\n"
+        "/list\n"
+        "/news <symbol>"
+    )
 
-# ADD STOCK
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /add AAPL")
         return
 
     symbol = context.args[0].upper()
+    stocks = load_stocks()
 
-    try:
-        cursor.execute("INSERT INTO stocks (symbol) VALUES (?)", (symbol,))
-        conn.commit()
-        await update.message.reply_text(f"✅ {symbol} added.")
-    except:
-        await update.message.reply_text("⚠️ Stock already exists.")
+    if symbol in stocks:
+        await update.message.reply_text("Already added.")
+        return
 
-# REMOVE STOCK
+    stocks.append(symbol)
+    save_stocks(stocks)
+    await update.message.reply_text(f"✅ Added {symbol}")
+
 async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /remove AAPL")
         return
 
     symbol = context.args[0].upper()
-    cursor.execute("DELETE FROM stocks WHERE symbol=?", (symbol,))
-    conn.commit()
-    await update.message.reply_text(f"❌ {symbol} removed.")
+    stocks = load_stocks()
 
-# LIST STOCKS
-async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cursor.execute("SELECT symbol FROM stocks")
-    rows = cursor.fetchall()
-
-    if not rows:
-        await update.message.reply_text("No stocks saved.")
+    if symbol not in stocks:
+        await update.message.reply_text("Not in list.")
         return
 
-    text = "📌 Saved Stocks:\n"
-    for row in rows:
-        text += f"- {row[0]}\n"
+    stocks.remove(symbol)
+    save_stocks(stocks)
+    await update.message.reply_text(f"❌ Removed {symbol}")
 
-    await update.message.reply_text(text)
+async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    stocks = load_stocks()
 
-# NEWS COMMAND
-async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not stocks:
+        await update.message.reply_text("No stocks added.")
+        return
+
+    await update.message.reply_text("📌 Your Stocks:\n" + "\n".join(stocks))
+
+async def stock_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /news AAPL")
         return
 
     symbol = context.args[0].upper()
-    feed = feedparser.parse(f"https://news.google.com/rss/search?q={symbol}+stock")
 
-    headlines = []
-    for entry in feed.entries[:5]:
-        headlines.append(entry.title)
+    feed = feedparser.parse(
+        f"https://news.google.com/rss/search?q={symbol}+stock"
+    )
 
-    if not headlines:
+    if not feed.entries:
         await update.message.reply_text("No news found.")
         return
 
-    text = f"📰 Latest News for {symbol}:\n\n"
-    for h in headlines:
-        text += f"- {h}\n"
+    news_list = []
+    for entry in feed.entries[:5]:
+        news_list.append(f"📰 {entry.title}\n{entry.link}\n")
 
-    await update.message.reply_text(text)
+    await update.message.reply_text("\n".join(news_list))
 
-# ANALYZE COMMAND
-async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /analyze AAPL")
-        return
+# ==============================
+# TELEGRAM BOT RUNNER
+# ==============================
 
-    symbol = context.args[0].upper()
+def run_bot():
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
 
-    # 1️⃣ Get Weekly Price
-    try:
-        data = yf.download(symbol, period="7d", interval="1d")
-        open_price = data["Open"][0]
-        close_price = data["Close"][-1]
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_stock))
+    app.add_handler(CommandHandler("remove", remove_stock))
+    app.add_handler(CommandHandler("list", list_stocks))
+    app.add_handler(CommandHandler("news", stock_news))
 
-        if close_price > open_price:
-            bias = "Bullish"
-        elif close_price < open_price:
-            bias = "Bearish"
-        else:
-            bias = "Neutral"
-    except:
-        bias = "Unknown"
+    app.run_polling()
 
-    # 2️⃣ Get News Headlines
-    feed = feedparser.parse(f"https://news.google.com/rss/search?q={symbol}+stock")
-    headlines = [entry.title for entry in feed.entries[:5]]
+# ==============================
+# FLASK APP (FOR RENDER PORT)
+# ==============================
 
-    # 3️⃣ AI Summary
-    summary_text = "No AI summary available."
-    if OPENAI_API_KEY and headlines:
-        try:
-            prompt = f"""
-            These are recent headlines about {symbol}:
-            {headlines}
+flask_app = Flask(__name__)
 
-            Summarize briefly and suggest if next week looks bullish or bearish.
-            """
-
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
-            )
-
-            summary_text = response.choices[0].message.content
-        except:
-            summary_text = "AI summary failed."
-
-    final_text = f"""
-📊 Weekly Technical Bias: {bias}
-
-🧠 AI Market Summary:
-{summary_text}
-"""
-
-    await update.message.reply_text(final_text)
-
-# =========================
-# MAIN
-# =========================
-import asyncio
-import os
-
-PORT = int(os.environ.get("PORT", 10000))
-RENDER_EXTERNAL_URL = os.environ.get("RENDER_EXTERNAL_URL")
-
-app = ApplicationBuilder().token(TOKEN).build()
-
-app.add_handler(CommandHandler("start", start))
-app.add_handler(CommandHandler("add", add_stock))
-app.add_handler(CommandHandler("remove", remove_stock))
-app.add_handler(CommandHandler("list", list_stocks))
-app.add_handler(CommandHandler("news", news))
-app.add_handler(CommandHandler("analyze", analyze))
-
-async def main():
-    await app.initialize()
-    
-    # Set webhook URL
-    webhook_url = f"{RENDER_EXTERNAL_URL}/webhook"
-    await app.bot.set_webhook(webhook_url)
-
-    # Start webhook server
-    await app.run_webhook(
-        listen="0.0.0.0",
-        port=PORT,
-        webhook_url=webhook_url,
-        url_path="webhook"
-    )
-
-asyncio.run(main())
-
-import threading
-from flask import Flask
-
-app = Flask(__name__)
-
-@app.route("/")
+@flask_app.route("/")
 def home():
-    return "Bot is running!"
+    return "Stock Telegram Bot is running!"
 
-def run_web():
-    app.run(host="0.0.0.0", port=10000)
+# ==============================
+# MAIN
+# ==============================
 
-threading.Thread(target=run_web).start()
+if __name__ == "__main__":
+    # Run Telegram bot in background thread
+    bot_thread = Thread(target=run_bot)
+    bot_thread.start()
+
+    # Run Flask server (required for Render Web Service)
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
