@@ -103,25 +103,11 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ANALYZE COMMAND
 async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
-
     if not context.args:
-        await update.message.reply_text("Please provide a stock symbol.")
+        await update.message.reply_text("Usage: /analyze AAPL")
         return
 
     symbol = context.args[0].upper()
-
-    headlines = "Sample headlines here"
-
-    final_text = f"""
-Stock: {symbol}
-
-Recent News:
-{headlines}
-
-Outlook: Neutral
-"""
-
-    await update.message.reply_text(final_text)
 
     # 1️⃣ Get Weekly Price
     try:
@@ -143,27 +129,24 @@ Outlook: Neutral
     headlines = [entry.title for entry in feed.entries[:5]]
 
     # 3️⃣ AI Summary
-summary_text = "No AI summary available."
+    summary_text = "No AI summary available."
+    if OPENAI_API_KEY and headlines:
+        try:
+            prompt = f"""
+            These are recent headlines about {symbol}:
+            {headlines}
 
-if OPENAI_API_KEY and headlines:
-    try:
-        prompt = f"""
-        These are recent headlines about {symbol}:
-        {headlines}
+            Summarize briefly and suggest if next week looks bullish or bearish.
+            """
 
-        Summarize briefly and suggest if next week looks bullish or bearish.
-        """
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[{"role": "user", "content": prompt}]
+            )
 
-        response = client.chat.completions.create(
-            model="gpt-4.1-mini",
-            messages=[{"role": "user", "content": prompt}],
-            timeout=30
-        )
-
-        summary_text = response.choices[0].message.content
-
-    except Exception as e:
-        summary_text = f"AI Error: {str(e)}"
+            summary_text = response.choices[0].message.content
+        except:
+            summary_text = "AI summary failed."
 
     final_text = f"""
 📊 Weekly Technical Bias: {bias}
