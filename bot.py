@@ -160,6 +160,11 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # =========================
 # MAIN
 # =========================
+import asyncio
+
+PORT = int(os.environ.get("PORT", 10000))
+RENDER_EXTERNAL_URL = os.getenv("RENDER_EXTERNAL_URL")
+
 app = ApplicationBuilder().token(TOKEN).build()
 
 app.add_handler(CommandHandler("start", start))
@@ -169,5 +174,17 @@ app.add_handler(CommandHandler("list", list_stocks))
 app.add_handler(CommandHandler("news", news))
 app.add_handler(CommandHandler("analyze", analyze))
 
-print("Bot started...")
-app.run_polling()
+async def main():
+    await app.initialize()
+    await app.start()
+
+    webhook_url = f"{RENDER_EXTERNAL_URL}"
+    await app.bot.set_webhook(webhook_url)
+
+    await app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        webhook_url=webhook_url
+    )
+
+asyncio.run(main())
