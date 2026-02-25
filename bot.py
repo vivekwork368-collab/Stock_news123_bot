@@ -10,21 +10,22 @@ TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"
 
 logging.basicConfig(level=logging.INFO)
 
-# Simple cache
 CACHE = {}
 CACHE_DURATION = 300  # 5 minutes
+PORTFOLIO = set()
 
-# ---------------- START ----------------
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📊 Smart Stock Tracking Bot\n\n"
-        "/track TCS - Track stock + sector news\n"
-        "/price TCS - Get stock price\n"
-        "/nifty - NIFTY 50\n"
-        "/sensex - SENSEX"
-    )
+SECTOR_MAP = {
+    "TCS": "IT Services",
+    "INFY": "IT Services",
+    "RELIANCE": "Energy",
+    "HDFCBANK": "Banking",
+    "ICICIBANK": "Banking",
+    "SBIN": "Banking",
+    "TATAMOTORS": "Automobile",
+    "MARUTI": "Automobile",
+    "SUNPHARMA": "Pharma"
+}
 
-# ---------------- CACHE HELPER ----------------
 def get_cached(key):
     if key in CACHE:
         data, timestamp = CACHE[key]
@@ -35,137 +36,142 @@ def get_cached(key):
 def set_cache(key, data):
     CACHE[key] = (data, time.time())
 
-# ---------------- TRACK ----------------
+# ---------------- START ----------------
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "📊 Personal Portfolio Bot\n\n"
+        "/add TCS\n"
+        "/remove TCS\n"
+        "/mylist\n"
+        "/portfolio\n"
+        "/track TCS"
+    )
+
+# ---------------- ADD STOCK ----------------
+async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /add TCS")
+        return
+
+    symbol = context.args[0].upper()
+    PORTFOLIO.add(symbol)
+    await update.message.reply_text(f"✅ {symbol} added to portfolio.")
+
+# ---------------- REMOVE STOCK ----------------
+async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /remove TCS")
+        return
+
+    symbol = context.args[0].upper()
+
+    if symbol in PORTFOLIO:
+        PORTFOLIO.remove(symbol)
+        await update.message.reply_text(f"❌ {symbol} removed.")
+    else:
+        await update.message.reply_text("Stock not in portfolio.")
+
+# ---------------- SHOW LIST ----------------
+async def mylist(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not PORTFOLIO:
+        await update.message.reply_text("Portfolio empty.")
+        return
+
+    stocks = "\n".join(PORTFOLIO)
+    await update.message.reply_text(f"📋 Your Portfolio:\n\n{stocks}")
+
+# ---------------- PORTFOLIO SUMMARY ----------------
+async def portfolio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not PORTFOLIO:
+        await update.message.reply_text("Portfolio empty.")
+        return
+
+    message = "📊 Portfolio Summary\n\n"
+
+    for symbol in PORTFOLIO:
+        cache_key = f"price_{symbol}"
+        cached = get_cached(cache_key)
+
+        if cached:
+            message += cached + "\n"
+            continue
+
+        try:
+            stock = yf.Ticker(symbol + ".NS")
+            data = stock.history(period="1d")
+
+            if data.empty:
+                continue
+
+            close = data["Close"].iloc[-1]
+            open_price = data["Open"].iloc[-1]
+            change_percent = ((close - open_price) / open_price) * 100
+
+            sector = SECTOR_MAP.get(symbol, "Market")
+
+            line = f"{symbol} | ₹{round(close,2)} | {round(change_percent,2)}% | {sector}"
+            set_cache(cache_key, line)
+
+            message += line + "\n"
+
+        except:
+            message += f"{symbol} | Data unavailable\n"
+
+    await update.message.reply_text(message)
+
+# ---------------- TRACK SINGLE STOCK ----------------
 async def track(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /track TCS")
         return
 
-    symbol_input = context.args[0].upper()
-    cache_key = f"track_{symbol_input}"
-
-    cached_data = get_cached(cache_key)
-    if cached_data:
-        await update.message.reply_text(cached_data)
-        return
+    symbol = context.args[0].upper()
 
     try:
-        stock = yf.Ticker(symbol_input + ".NS")
-        info = stock.info
-
-        company_name = info.get("longName", symbol_input)
-        sector = info.get("sector", "Indian stock market")
-
-        query = f"{company_name} OR {sector}"
-        rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
-
-        response = requests.get(rss_url, timeout=10)
-        root = ET.fromstring(response.content)
-        items = root.findall(".//item")[:5]
-
-        if not items:
-            await update.message.reply_text("No news found.")
-            return
-
-        message = f"📰 {company_name}\nSector: {sector}\n\n"
-
-        for item in items:
-            title = item.find("title").text
-            link = item.find("link").text
-            message += f"🔹 {title}\n{link}\n\n"
-
-        set_cache(cache_key, message)
-
-        for i in range(0, len(message), 4000):
-            await update.message.reply_text(message[i:i+4000])
-
-    except Exception:
-        await update.message.reply_text("⚠ Rate limited. Please try again after 1-2 minutes.")
-
-# ---------------- PRICE ----------------
-async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not context.args:
-        await update.message.reply_text("Usage: /price TCS")
-        return
-
-    symbol_input = context.args[0].upper()
-    cache_key = f"price_{symbol_input}"
-
-    cached_data = get_cached(cache_key)
-    if cached_data:
-        await update.message.reply_text(cached_data)
-        return
-
-    try:
-        stock = yf.Ticker(symbol_input + ".NS")
+        stock = yf.Ticker(symbol + ".NS")
         data = stock.history(period="1d")
 
         if data.empty:
             await update.message.reply_text("Stock not found.")
             return
 
-        price_value = round(data["Close"].iloc[-1], 2)
-        message = f"📊 {symbol_input} Current Price: ₹{price_value}"
+        close = data["Close"].iloc[-1]
+        open_price = data["Open"].iloc[-1]
+        change_percent = ((close - open_price) / open_price) * 100
 
-        set_cache(cache_key, message)
-        await update.message.reply_text(message)
+        sector = SECTOR_MAP.get(symbol, "Market")
 
-    except Exception:
-        await update.message.reply_text("⚠ Rate limited. Try again shortly.")
+        query = f"{symbol} OR {sector}"
+        rss_url = f"https://news.google.com/rss/search?q={query}&hl=en-IN&gl=IN&ceid=IN:en"
 
-# ---------------- NIFTY ----------------
-async def nifty(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cache_key = "nifty"
-    cached_data = get_cached(cache_key)
-    if cached_data:
-        await update.message.reply_text(cached_data)
-        return
+        response = requests.get(rss_url, timeout=10)
+        root = ET.fromstring(response.content)
+        items = root.findall(".//item")[:3]
 
-    try:
-        index = yf.Ticker("^NSEI")
-        data = index.history(period="1d")
-        price = round(data["Close"].iloc[-1], 2)
+        message = f"📊 {symbol}\nSector: {sector}\nPrice: ₹{round(close,2)}\nChange: {round(change_percent,2)}%\n\n📰 News:\n\n"
 
-        message = f"📈 NIFTY 50: {price}"
-        set_cache(cache_key, message)
+        for item in items:
+            title = item.find("title").text
+            link = item.find("link").text
+            message += f"🔹 {title}\n{link}\n\n"
 
         await update.message.reply_text(message)
 
-    except Exception:
-        await update.message.reply_text("⚠ Rate limited. Try again later.")
-
-# ---------------- SENSEX ----------------
-async def sensex(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    cache_key = "sensex"
-    cached_data = get_cached(cache_key)
-    if cached_data:
-        await update.message.reply_text(cached_data)
-        return
-
-    try:
-        index = yf.Ticker("^BSESN")
-        data = index.history(period="1d")
-        price = round(data["Close"].iloc[-1], 2)
-
-        message = f"📈 SENSEX: {price}"
-        set_cache(cache_key, message)
-
-        await update.message.reply_text(message)
-
-    except Exception:
-        await update.message.reply_text("⚠ Rate limited. Try again later.")
+    except:
+        await update.message.reply_text("⚠ Try again later.")
 
 # ---------------- MAIN ----------------
 def main():
     app = ApplicationBuilder().token(TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add", add_stock))
+    app.add_handler(CommandHandler("remove", remove_stock))
+    app.add_handler(CommandHandler("mylist", mylist))
+    app.add_handler(CommandHandler("portfolio", portfolio))
     app.add_handler(CommandHandler("track", track))
-    app.add_handler(CommandHandler("price", price))
-    app.add_handler(CommandHandler("nifty", nifty))
-    app.add_handler(CommandHandler("sensex", sensex))
 
-    print("🚀 Stable Smart Bot Running...")
+    print("🚀 Portfolio Bot Running...")
     app.run_polling()
 
 if __name__ == "__main__":
