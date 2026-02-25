@@ -129,24 +129,27 @@ async def analyze(update: Update, context: ContextTypes.DEFAULT_TYPE):
     headlines = [entry.title for entry in feed.entries[:5]]
 
     # 3️⃣ AI Summary
-    summary_text = "No AI summary available."
-    if OPENAI_API_KEY and headlines:
-        try:
-            prompt = f"""
-            These are recent headlines about {symbol}:
-            {headlines}
+summary_text = "No AI summary available."
 
-            Summarize briefly and suggest if next week looks bullish or bearish.
-            """
+if OPENAI_API_KEY and headlines:
+    try:
+        prompt = f"""
+        These are recent headlines about {symbol}:
+        {headlines}
 
-            response = client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}]
-            )
+        Summarize briefly and suggest if next week looks bullish or bearish.
+        """
 
-            summary_text = response.choices[0].message.content
-        except:
-            summary_text = "AI summary failed."
+        response = client.chat.completions.create(
+            model="gpt-4.1-mini",
+            messages=[{"role": "user", "content": prompt}],
+            timeout=30
+        )
+
+        summary_text = response.choices[0].message.content
+
+    except Exception as e:
+        summary_text = f"AI Error: {str(e)}"
 
     final_text = f"""
 📊 Weekly Technical Bias: {bias}
