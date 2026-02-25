@@ -1,7 +1,6 @@
 from telegram import Update, Bot
 from telegram.ext import ApplicationBuilder, CommandHandler, ContextTypes
 import os, json, feedparser, openai
-from apscheduler.schedulers.background import BackgroundScheduler
 
 # ---------- CONFIG ----------
 TELEGRAM_TOKEN = os.getenv("8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ")
@@ -126,8 +125,7 @@ async def get_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"*{stock} Monthly Sentiment:*\n{agg}", parse_mode="Markdown")
 
 # ---------- DAILY REPORT ----------
-def daily_report():
-    import asyncio
+async def daily_report(context: ContextTypes.DEFAULT_TYPE):
     portfolio = load_portfolio()
     if not portfolio: return
     for stock in portfolio:
@@ -135,12 +133,13 @@ def daily_report():
         sentiments = []
         report_msg = f"*{stock} News Summary & Sentiment:*\n"
         for news_item in news_list:
-            result = asyncio.run(summarize_and_analyze(news_item, stock))
+            result = await summarize_and_analyze(news_item, stock)
             report_msg += result + "\n\n"
             if "Sentiment:" in result:
                 sentiments.append(result.split("Sentiment:")[1].strip())
         agg = aggregate_sentiment(sentiments)
-        bot.send_message(chat_id=CHAT_ID, text=report_msg, parse_mode="Markdown")
+        report_msg += f"*Aggregated Monthly Sentiment:*\n{agg}"
+        await context.bot.send_message(chat_id=CHAT_ID, text=report_msg, parse_mode="Markdown")
 
 # ---------- MAIN ----------
 def main():
@@ -152,12 +151,11 @@ def main():
     app.add_handler(CommandHandler("portfolio", show_portfolio))
     app.add_handler(CommandHandler("news", get_news))
 
-    # Scheduler for daily report
-    scheduler = BackgroundScheduler()
-    scheduler.add_job(daily_report, 'cron', hour=9, minute=0)
-    scheduler.start()
+    # Use job_queue for daily report at 9:00 AM
+    app.job_queue.run_daily(daily_report, time=datetime.time(hour=9, minute=0))
 
     app.run_polling()
 
 if __name__ == "__main__":
+    import datetime
     main()
