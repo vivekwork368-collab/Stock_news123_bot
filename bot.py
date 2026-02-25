@@ -1,28 +1,16 @@
 import os
 import json
-import requests
+import asyncio
 import feedparser
-import yfinance as yf
 from flask import Flask
 from threading import Thread
 from telegram import Update
-from telegram.ext import (
-    Application,
-    CommandHandler,
-    ContextTypes,
-)
-
-# ==============================
-# CONFIG
-# ==============================
+from telegram.ext import Application, CommandHandler, ContextTypes
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-
 STOCK_FILE = "stocks.json"
 
-# ==============================
-# SIMPLE DATABASE (JSON FILE)
-# ==============================
+# ================= DATABASE =================
 
 def load_stocks():
     if not os.path.exists(STOCK_FILE):
@@ -34,14 +22,11 @@ def save_stocks(stocks):
     with open(STOCK_FILE, "w") as f:
         json.dump(stocks, f)
 
-# ==============================
-# TELEGRAM COMMANDS
-# ==============================
+# ================= COMMANDS =================
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "📈 Stock Bot Running!\n\n"
-        "Commands:\n"
         "/add <symbol>\n"
         "/remove <symbol>\n"
         "/list\n"
@@ -62,6 +47,7 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     stocks.append(symbol)
     save_stocks(stocks)
+
     await update.message.reply_text(f"✅ Added {symbol}")
 
 async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -78,6 +64,7 @@ async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     stocks.remove(symbol)
     save_stocks(stocks)
+
     await update.message.reply_text(f"❌ Removed {symbol}")
 
 async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -110,11 +97,21 @@ async def stock_news(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("\n".join(news_list))
 
-# ==============================
-# TELEGRAM BOT RUNNER
-# ==============================
+# ================= FLASK (PORT OPENER) =================
 
-def run_bot():
+flask_app = Flask(__name__)
+
+@flask_app.route("/")
+def home():
+    return "Bot is running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    flask_app.run(host="0.0.0.0", port=port)
+
+# ================= MAIN =================
+
+async def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
     app.add_handler(CommandHandler("start", start))
@@ -123,27 +120,11 @@ def run_bot():
     app.add_handler(CommandHandler("list", list_stocks))
     app.add_handler(CommandHandler("news", stock_news))
 
-    app.run_polling()
-
-# ==============================
-# FLASK APP (FOR RENDER PORT)
-# ==============================
-
-flask_app = Flask(__name__)
-
-@flask_app.route("/")
-def home():
-    return "Stock Telegram Bot is running!"
-
-# ==============================
-# MAIN
-# ==============================
+    await app.run_polling()
 
 if __name__ == "__main__":
-    # Run Telegram bot in background thread
-    bot_thread = Thread(target=run_bot)
-    bot_thread.start()
+    # Start Flask in background thread
+    Thread(target=run_flask).start()
 
-    # Run Flask server (required for Render Web Service)
-    port = int(os.environ.get("PORT", 10000))
-    flask_app.run(host="0.0.0.0", port=port)
+    # Run Telegram bot in main event loop
+    asyncio.run(main())
