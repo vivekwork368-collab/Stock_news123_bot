@@ -41,8 +41,7 @@ class DummyHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"Bot is running 🚀")
-
+        self.wfile.write("Bot is running 🚀".encode("utf-8"))
 def run_dummy_server():
     port = int(os.environ.get("PORT", 10000))  # Render assigns PORT automatically
     server = HTTPServer(("0.0.0.0", port), DummyHandler)
