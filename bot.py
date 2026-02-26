@@ -1,39 +1,112 @@
-import os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
-from telegram import Update
-from telegram.ext import Updater, CommandHandler, CallbackContext
+import logging
+import yfinance as yf
+import feedparser
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import (
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+)
 
-# --------------------------
-# Your Bot Token
-# --------------------------
-TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"  # Replace with your actual token
+# Replace this with your bot token
+TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
 
-# --------------------------
-# Your Bot Handlers
-# --------------------------
-def start(update: Update, context: CallbackContext):
-    update.message.reply_text("Hello! Bot is running on Render ✅")
+# Enable logging
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
-# You can add more command handlers here
-def hello(update: Update, context: CallbackContext):
-    update.message.reply_text("Hi there! 👋")
+# ===== Helper functions =====
 
-# --------------------------
-# Telegram Bot Function
-# --------------------------
-def run_telegram_bot():
-    updater = Updater(TOKEN, use_context=True)
-    dp = updater.dispatcher
+async def fetch_stock_price(symbol: str) -> str:
+    try:
+        stock = yf.Ticker(symbol)
+        data = stock.history(period="1d")
+        if not data.empty:
+            price = data["Close"].iloc[-1]
+            return f"{symbol.upper()} current price: ₹{price:.2f}"
+        else:
+            return f"No data available for {symbol.upper()}"
+    except Exception as e:
+        logger.error(f"Error fetching stock price: {e}")
+        return "Failed to fetch stock price."
 
-    # Add your handlers
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("hello", hello))
+async def fetch_stock_news(symbol: str) -> str:
+    try:
+        url = f"https://finance.yahoo.com/rss/headline?s={symbol}"
+        feed = feedparser.parse(url)
+        if feed.entries:
+            news_list = [f"- {entry.title}" for entry in feed.entries[:5]]
+            return f"Latest news for {symbol.upper()}:\n" + "\n".join(news_list)
+        else:
+            return f"No news found for {symbol.upper()}"
+    except Exception as e:
+        logger.error(f"Error fetching news: {e}")
+        return "Failed to fetch news."
 
-    # Start polling
-    updater.start_polling()
-    updater.idle()  # Keeps bot alive
+# ===== Command Handlers =====
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    keyboard = [
+        [InlineKeyboardButton("Get Stock Price", callback_data="price")],
+        [InlineKeyboardButton("Get Stock News", callback_data="news")],
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text(
+        "Welcome to StockBot! Choose an option and then enter the stock symbol (like RELIANCE.BO):",
+        reply_markup=reply_markup,
+    )
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    # Store user selection (price or news) in context.user_data
+    context.user_data["action"] = query.data
+    await query.edit_message_text(
+        text=f"You selected *{query.data.upper()}*. Now send the stock symbol:",
+        parse_mode="Markdown",
+    )
+
+async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle stock symbol sent by user"""
+    symbol = update.message.text.strip().upper()
+    action = context.user_data.get("action")
+
+    if not action:
+        await update.message.reply_text(
+            "Please select an option first using /start or the menu buttons."
+        )
+        return
+
+    if action == "price":
+        result = await fetch_stock_price(symbol)
+    elif action == "news":
+        result = await fetch_stock_news(symbol)
+    else:
+        result = "Unknown action."
+
+    await update.message.reply_text(result)
+    # Clear action after processing
+    context.user_data["action"] = None
+
+# ===== Main =====
+
+async def main():
+    app = ApplicationBuilder().token(TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CallbackQueryHandler(button_handler))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+    await app.run_polling()
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(main())
 # --------------------------
 # Dummy Web Server for Render
 # --------------------------
