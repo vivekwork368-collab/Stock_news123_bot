@@ -40,7 +40,7 @@ def init_db():
     conn.close()
 
 # ------------------ Finnhub Backup ------------------
-def get_price_finnhub(symbol):
+defget_price_finnhub(symbol):
     if not FINNHUB_KEY:
         return None
 
@@ -48,7 +48,12 @@ def get_price_finnhub(symbol):
         url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_KEY}"
         r = requests.get(url, timeout=5)
         data = r.json()
-        return data.get("c")
+        price = data.get("c")
+
+        if price and price > 0:
+            return price
+
+        return None
     except:
         return None
 
@@ -221,7 +226,13 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /price SYMBOL")
         return
 
-    symbol = context.args[0].upper()
+user_input = " ".join(context.args)
+symbol = resolve_symbol(user_input)
+
+if not symbol:
+    await update.message.reply_text("❌ Could not find stock")
+    return
+    
     await update.message.reply_text(f"Fetching price for {symbol}...")
 
     price_value = get_price(symbol)
