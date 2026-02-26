@@ -57,7 +57,6 @@ def get_price_finnhub(symbol):
     except:
         return None
 
-
 # ------------------ Smart Symbol Resolver ------------------
 def resolve_symbol(user_input):
     user_input = user_input.upper().strip()
@@ -66,7 +65,14 @@ def resolve_symbol(user_input):
     if user_input.endswith(".NS"):
         return user_input
 
-    # If Finnhub key not set
+    # 🔥 Always try NSE directly first (for Indian stocks)
+    nse_symbol = user_input + ".NS"
+    test_price = get_price(nse_symbol)
+
+    if test_price is not None:
+        return nse_symbol
+
+    # If Finnhub key missing, stop here
     if not FINNHUB_KEY:
         return None
 
@@ -77,20 +83,21 @@ def resolve_symbol(user_input):
 
         results = data.get("result", [])
 
+        # Prefer NSE suffix explicitly
         for result in results:
             symbol = result.get("symbol", "")
-            exchange = result.get("exchange", "")
-
-            # Prefer NSE stocks
-            if exchange == "NSE":
+            if symbol.endswith(".NS"):
                 return symbol
 
-        # If NSE not found, return first match
+        # Otherwise return first valid result
         if results:
             return results[0].get("symbol")
 
     except Exception as e:
         print("Symbol resolve error:", e)
+
+    return None
+
 
     return None
 # ------------------ Safe Price Fetch ------------------
