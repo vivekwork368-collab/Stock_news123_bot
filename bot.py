@@ -146,6 +146,7 @@ def get_google_news(symbol):
     except Exception as e:
         print("Google news error:", e)
         return []
+        
         # ------------------ Finnhub Backup News ------------------
 def get_finnhub_news(symbol):
     if not FINNHUB_KEY:
