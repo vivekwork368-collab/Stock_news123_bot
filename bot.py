@@ -250,13 +250,15 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(msg)
 
 # ------------------ Main ------------------
-async def main():
-    init_db()
-    logger.info("Stock Tracker Bot starting...")
+def run_bot():
+    """Skip problematic async initialization"""
+    print("🚀 Stock Tracker Bot LIVE!")
     
-    app = Application.builder().token(TOKEN).build()
+    # Create application WITHOUT auto-initialization
+    builder = Application.builder().token(TOKEN)
+    app = builder.build()
     
-    # Add all handlers
+    # Add handlers FIRST
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_stock))
     app.add_handler(CommandHandler("remove", remove_stock))
@@ -264,28 +266,20 @@ async def main():
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("sentiment", weekly_sentiment))
     
-    # ONE LINE - Handles everything!
-    await app.run_polling(drop_pending_updates=True)
+    # Start polling with custom request settings
+    app.run_polling(
+        drop_pending_updates=True,
+        timeout=30,  # Longer timeout
+        bootstrap_retries=-1,  # Retry forever
+        read_timeout=30,
+        write_timeout=30,
+        connect_timeout=30
+    )
 
-# ------------------ Entry ------------------
 if __name__ == '__main__':
+    init_db()
+    print("📈 Initializing database...")
     if TOKEN:
-        asyncio.run(main())
+        run_bot()
     else:
-        print("❌ TELEGRAM_TOKEN not set!")
-if __name__ == '__main__':
-    import uvicorn
-    from fastapi import FastAPI
-    app_fastapi = FastAPI()
-    
-    @app_fastapi.get("/")
-    async def root():
-        return {"status": "Bot running"}
-    
-    if TOKEN:
-        # Start bot in thread
-        import threading
-        threading.Thread(target=lambda: main(), daemon=True).start()
-        uvicorn.run(app_fastapi, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
-    else:
-        print("TELEGRAM_TOKEN not set!")
+        print("❌ TELEGRAM_TOKEN missing!")
