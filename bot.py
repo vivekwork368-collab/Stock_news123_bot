@@ -109,21 +109,28 @@ def resolve_symbol(user_input):
 
 # ------------------ Safe Price Fetch ------------------
 def get_price(symbol):
-    # Try Finnhub first
-    price = get_price_finnhub(symbol)
-    if price:
-        return price
+    # Only use Finnhub
+    if not FINNHUB_KEY:
+        print("⚠ FINNHUB_KEY not set")
+        return None
 
-    # Fallback to Yahoo
     try:
-        ticker = yf.Ticker(symbol)
-        price = ticker.fast_info.get("last_price")
+        url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_KEY}"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+
+        print("Finnhub response:", data)  # Debug log
+
+        price = data.get("c")
+
         if price and price > 0:
             return float(price)
-    except:
-        pass
 
-    return None
+        return None
+
+    except Exception as e:
+        print("Finnhub error:", e)
+        return None
 
 # ------------------ Sentiment ------------------
 POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
