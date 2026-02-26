@@ -5,7 +5,6 @@ import sqlite3
 import re
 from datetime import datetime
 from collections import defaultdict
-import yfinance as yf
 import feedparser
 import requests
 from telegram import Update
@@ -60,77 +59,67 @@ def get_price_finnhub(symbol):
 
 # ------------------ Smart Symbol Resolver ------------------
 def resolve_symbol(user_input):
-    user_input = user_input.upper()
+    user_input = user_input.upper().strip()
 
     # If already NSE format
     if user_input.endswith(".NS"):
         return user_input
 
-    # Try NSE assumption
-    yahoo_try = user_input + ".NS"
+    # If Finnhub key not set
+    if not FINNHUB_KEY:
+        return None
+
     try:
-        ticker = yf.Ticker(yahoo_try)
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return yahoo_try
-    except:
-        pass
+        url = f"https://finnhub.io/api/v1/search?q={user_input}&token={FINNHUB_KEY}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
 
-    # Try exact symbol (US stocks)
-    try:
-        ticker = yf.Ticker(user_input)
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return user_input
-    except:
-        pass
+        results = data.get("result", [])
 
-    # Finnhub search
-    if FINNHUB_KEY:
-        try:
-            url = f"https://finnhub.io/api/v1/search?q={user_input}&token={FINNHUB_KEY}"
-            r = requests.get(url, timeout=5)
-            data = r.json()
+        for result in results:
+            symbol = result.get("symbol", "")
+            exchange = result.get("exchange", "")
 
-            for result in data.get("result", []):
-                symbol = result.get("symbol", "")
-                exchange = result.get("exchange", "")
+            # Prefer NSE stocks
+            if exchange == "NSE":
+                return symbol
 
-                if "NS" in symbol or exchange == "NSE":
-                    return symbol
+        # If NSE not found, return first match
+        if results:
+            return results[0].get("symbol")
 
-            if data.get("result"):
-                return data["result"][0]["symbol"]
-
-        except:
-            pass
+    except Exception as e:
+        print("Symbol resolve error:", e)
 
     return None
 
-# ------------------ Safe Price Fetch ------------------
-def get_price(symbol):
-    # Only use Finnhub
+#def get_price(symbol):
     if not FINNHUB_KEY:
-        print("⚠ FINNHUB_KEY not set")
+        print("❌ FINNHUB_KEY missing")
         return None
 
     try:
         url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_KEY}"
-        r = requests.get(url, timeout=5)
-        data = r.json()
+        r = requests.get(url, timeout=10)
+        
+        if r.status_code != 200:
+            print("HTTP Error:", r.status_code)
+            return None
 
-        print("Finnhub response:", data)  # Debug log
+        data = r.json()
+        print("Finnhub response:", data)
 
         price = data.get("c")
 
-        if price and price > 0:
+        if price is not None and price > 0:
             return float(price)
 
         return None
 
     except Exception as e:
-        print("Finnhub error:", e)
-        return None
+        print("Price fetch error:", e)
+        return None ------------------ Safe Price Fetch ------------------
+
 
 # ------------------ Sentiment ------------------
 POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
