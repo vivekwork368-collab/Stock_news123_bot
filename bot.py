@@ -6,6 +6,7 @@ import re
 from datetime import datetime
 from collections import defaultdict
 import feedparser
+import urllib.parse
 import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
@@ -92,23 +93,19 @@ def resolve_symbol(user_input):
         print("Symbol resolve error:", e)
 
     return None
-#------------------ Safe Price Fetch ------------------
+# ------------------ Safe Price Fetch ------------------
 def get_price(symbol):
     if not FINNHUB_KEY:
-        print("❌ FINNHUB_KEY missing")
         return None
 
     try:
         url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_KEY}"
         r = requests.get(url, timeout=10)
-        
+
         if r.status_code != 200:
-            print("HTTP Error:", r.status_code)
             return None
 
         data = r.json()
-        print("Finnhub response:", data)
-
         price = data.get("c")
 
         if price is not None and price > 0:
@@ -118,7 +115,7 @@ def get_price(symbol):
 
     except Exception as e:
         print("Price fetch error:", e)
-        return None 
+        return None
         
 # ------------------ Sentiment ------------------
 POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
@@ -130,13 +127,53 @@ def get_sentiment_score(title):
     neg = sum(1 for w in words if w in NEGATIVE_WORDS)
     return pos - neg
 
-# ------------------ RSS Feeds ------------------
-RSS_FEEDS = [
-    "https://feeds.reuters.com/reuters/businessNews",
-    "https://feeds.bloomberg.com/markets/news.rss",
-    "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
-    "https://www.moneycontrol.com/rss/latestnews.xml"
-]
+# ------------------ Google News (Primary) ------------------
+def get_google_news(symbol):
+    try:
+        query = urllib.parse.quote(symbol.replace(".NS",""))
+        url = f"https://news.google.com/rss/search?q={query}+stock&hl=en-IN&gl=IN&ceid=IN:en"
+
+        feed = feedparser.parse(url)
+
+        news = []
+
+        for entry in feed.entries[:5]:
+            score = get_sentiment_score(entry.title)
+            news.append((entry.title[:120], score))
+
+        return news
+
+    except Exception as e:
+        print("Google news error:", e)
+        return []
+        # ------------------ Finnhub Backup News ------------------
+def get_finnhub_news(symbol):
+    if not FINNHUB_KEY:
+        return []
+
+    try:
+        url = "https://finnhub.io/api/v1/company-news"
+        params = {
+            "symbol": symbol,
+            "from": "2026-01-01",
+            "to": datetime.now().strftime("%Y-%m-%d"),
+            "token": FINNHUB_KEY
+        }
+
+        r = requests.get(url, params=params, timeout=10)
+        data = r.json()
+
+        news = []
+
+        for item in data[:5]:
+            score = get_sentiment_score(item.get("headline",""))
+            news.append((item.get("headline","")[:120], score))
+
+        return news
+
+    except Exception as e:
+        print("Finnhub news error:", e)
+        return []
 
 # ------------------ Commands ------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -242,42 +279,31 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Unable to fetch price")
 
 # ---------- NEWS ----------
-async def stock_news(symbol):
-    news = []
-    symbol_clean = symbol.lower().replace(".ns","")
-
-    for url in RSS_FEEDS:
-        try:
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:15]:
-
-                title = entry.title.lower()
-
-                if (
-                    symbol_clean in title
-                    or symbol_clean.replace(".", "") in title
-                ):
-                    score = get_sentiment_score(entry.title)
-                    news.append((entry.title[:120], score))
-
-        except:
-            continue
-
-    return news[:5]
-
-async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async defnews(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /news SYMBOL")
         return
 
-    symbol = context.args[0].upper()
-    items = await stock_news(symbol)
+    user_input = " ".join(context.args)
+    symbol = resolve_symbol(user_input)
+
+    if not symbol:
+        await update.message.reply_text("❌ Could not find stock")
+        return
+
+    await update.message.reply_text(f"Fetching news for {symbol}...")
+
+    items = get_google_news(symbol)
 
     if not items:
-        await update.message.reply_text("No news found")
+        items = get_finnhub_news(symbol)
+
+    if not items:
+        await update.message.reply_text("❌ No news found")
         return
 
     msg = f"📰 {symbol} News:\n\n"
+
     for title, score in items:
         sentiment = "📈 Bullish" if score > 0 else "📉 Bearish" if score < 0 else "➡ Neutral"
         msg += f"{sentiment}: {title}\n\n"
@@ -302,7 +328,10 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = defaultdict(int)
 
     for symbol in stocks:
-        news_items = await stock_news(symbol)
+        news_items = get_google_news(symbol)
+
+if not news_items:
+    news_items = get_finnhub_news(symbol)
         for _, score in news_items:
             summary[symbol] += score
 
