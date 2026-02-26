@@ -1,5 +1,5 @@
 python-telegram-bot==20.7
-feedparser
 yfinance
-requests
+feedparser
+beautifulsoup4
 pandas
