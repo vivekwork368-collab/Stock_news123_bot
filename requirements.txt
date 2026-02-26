@@ -1,3 +1,5 @@
-python-telegram-bot==21.4
-feedparser==6.0.11
-nest_asyncio==1.6.0
+python-telegram-bot==20.7
+yfinance
+feedparser
+requests
+nest_asyncio
