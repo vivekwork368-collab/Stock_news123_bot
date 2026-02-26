@@ -109,17 +109,21 @@ def resolve_symbol(user_input):
 
 # ------------------ Safe Price Fetch ------------------
 def get_price(symbol):
-    # Try Yahoo (safe endpoint)
+    # Try Finnhub first
+    price = get_price_finnhub(symbol)
+    if price:
+        return price
+
+    # Fallback to Yahoo
     try:
         ticker = yf.Ticker(symbol)
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return float(data["Close"].iloc[-1])
+        price = ticker.fast_info.get("last_price")
+        if price and price > 0:
+            return float(price)
     except:
         pass
 
-    # Fallback to Finnhub
-    return get_price_finnhub(symbol)
+    return None
 
 # ------------------ Sentiment ------------------
 POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
