@@ -41,6 +41,56 @@ def init_db():
 
 # ------------------ Finnhub Backup ------------------
 def get_price_finnhub(symbol):
+    # ------------------ Smart Symbol Resolver ------------------
+def resolve_symbol(user_input):
+    user_input = user_input.upper()
+
+    # If already NSE format
+    if user_input.endswith(".NS"):
+        return user_input
+
+    # Try direct NSE assumption via Yahoo
+    yahoo_try = user_input + ".NS"
+    try:
+        ticker = yf.Ticker(yahoo_try)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return yahoo_try
+    except:
+        pass
+
+    # Try exact symbol as given (for US stocks like AAPL)
+    try:
+        ticker = yf.Ticker(user_input)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return user_input
+    except:
+        pass
+
+    # Use Finnhub search for name-based lookup
+    if FINNHUB_KEY:
+        try:
+            url = f"https://finnhub.io/api/v1/search?q={user_input}&token={FINNHUB_KEY}"
+            r = requests.get(url, timeout=5)
+            data = r.json()
+
+            for result in data.get("result", []):
+                symbol = result.get("symbol", "")
+                exchange = result.get("exchange", "")
+
+                # Prefer NSE stocks
+                if "NS" in symbol or exchange == "NSE":
+                    return symbol
+
+            # Otherwise return first result
+            if data.get("result"):
+                return data["result"][0]["symbol"]
+
+        except:
+            pass
+
+    return None
     if not FINNHUB_KEY:
         return None
 
@@ -95,15 +145,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/news SYMBOL\n"
         "/sentiment"
     )
-
-# ---------- ADD STOCK (No Validation) ----------
+# ---------- ADD STOCK (Smart Detection) ----------
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /add SYMBOL")
+        await update.message.reply_text("Usage: /add SYMBOL or COMPANY NAME")
         return
 
     user_id = update.effective_user.id
-    symbol = context.args[0].upper()
+    user_input = " ".join(context.args)
+
+    await update.message.reply_text("🔍 Searching stock...")
+
+    symbol = resolve_symbol(user_input)
+
+    if not symbol:
+        await update.message.reply_text("❌ Could not find stock")
+        return
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -169,7 +226,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     price_value = get_price(symbol)
 
-    if price_value:
+    if price_value is not None:
         await update.message.reply_text(f"💰 {symbol}: {price_value}")
     else:
         await update.message.reply_text("❌ Unable to fetch price")
@@ -182,10 +239,17 @@ async def stock_news(symbol):
     for url in RSS_FEEDS:
         try:
             feed = feedparser.parse(url)
-            for entry in feed.entries[:10]:
-                if symbol_clean in entry.title.lower():
+            for entry in feed.entries[:15]:
+
+                title = entry.title.lower()
+
+                if (
+                    symbol_clean in title
+                    or symbol_clean.replace(".", "") in title
+                ):
                     score = get_sentiment_score(entry.title)
                     news.append((entry.title[:120], score))
+
         except:
             continue
 
