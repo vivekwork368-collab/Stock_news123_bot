@@ -12,7 +12,7 @@ from telegram.ext import (
 )
 
 # Replace this with your bot token
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"
 
 # Enable logging
 logging.basicConfig(
