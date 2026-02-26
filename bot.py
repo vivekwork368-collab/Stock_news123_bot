@@ -3,7 +3,7 @@ import logging
 import os
 import sqlite3
 import re
-from datetime import datetime, timedelta
+from datetime import datetime
 from collections import defaultdict
 import yfinance as yf
 import feedparser
@@ -17,27 +17,30 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 DB_PATH = 'stocks.db'
 
-# Simple sentiment lexicon
+# Sentiment lexicon
 POSITIVE_WORDS = {'bullish', 'gain', 'rise', 'surge', 'rally', 'strong', 'beat', 'upgrade', 'buy', 'positive'}
 NEGATIVE_WORDS = {'bearish', 'fall', 'drop', 'plunge', 'crash', 'weak', 'miss', 'downgrade', 'sell', 'negative'}
 
-# RSS feeds for stock news
+# RSS feeds
 RSS_FEEDS = [
     'https://feeds.marketwatch.com/marketwatch/topstories/',
     'https://feeds.reuters.com/reuters/businessNews'
 ]
 
-init_db = lambda: sqlite3.connect(DB_PATH).execute('''
-    CREATE TABLE IF NOT EXISTS user_stocks (
-        user_id INTEGER,
-        symbol TEXT,
-        added_date TEXT,
-        PRIMARY KEY (user_id, symbol)
-    )
-''').connection.commit()
+def init_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.execute('''
+        CREATE TABLE IF NOT EXISTS user_stocks (
+            user_id INTEGER,
+            symbol TEXT,
+            added_date TEXT,
+            PRIMARY KEY (user_id, symbol)
+        )
+    ''')
+    conn.commit()
+    conn.close()
 
 def get_sentiment_score(title: str) -> int:
-    """Simple rule-based sentiment analysis"""
     words = re.findall(r'\bw+\b', title.lower())
     pos = sum(1 for w in words if w in POSITIVE_WORDS)
     neg = sum(1 for w in words if w in NEGATIVE_WORDS)
@@ -59,8 +62,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/sentiment - Weekly sentiment
 
 "
-        "✅ SQLite storage • RSS news • yFinance • Rule-based analysis",
-        parse_mode='Markdown'
+        "✅ SQLite • RSS • yFinance • Rule-based analysis"
     )
 
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -70,9 +72,6 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     symbol = context.args[0].upper()
-    conn = init_db()
-    
-    # Check if valid stock
     try:
         ticker = yf.Ticker(symbol)
         info = ticker.info
@@ -83,6 +82,7 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Invalid symbol: {symbol}")
         return
     
+    conn = sqlite3.connect(DB_PATH)
     conn.execute("INSERT OR IGNORE INTO user_stocks VALUES (?, ?, ?)", 
                 (user_id, symbol, datetime.now().isoformat()))
     conn.commit()
@@ -121,30 +121,27 @@ async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     stock_list = "📊 **Your Stocks:**
 " + "
 ".join([f"• {s[0]}" for s in stocks])
-    await update.message.reply_text(stock_list, parse_mode='Markdown')
+    await update.message.reply_text(stock_list)
 
 async def stock_news(symbol: str) -> list:
-    """Fetch latest news for symbol from RSS"""
     news = []
     symbol_lower = symbol.lower()
     
     for feed_url in RSS_FEEDS:
         try:
             feed = feedparser.parse(feed_url)
-            for entry in feed.entries[:5]:  # Last 5 entries
+            for entry in feed.entries[:5]:
                 if symbol_lower in entry.title.lower() or symbol_lower in entry.get('summary', '').lower():
                     score = get_sentiment_score(entry.title)
                     news.append({
                         'title': entry.title,
                         'link': entry.link,
-                        'score': score,
-                        'published': entry.get('published', 'N/A')
+                        'score': score
                     })
-        except Exception as e:
-            logger.error(f"RSS error: {e}")
+        except:
             continue
     
-    return news[:3]  # Top 3 relevant
+    return news[:3]
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -165,12 +162,11 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for i, item in enumerate(news_items, 1):
         sentiment = "🟢" if item['score'] > 0 else "🔴" if item['score'] < 0 else "🟡"
         message += f"{i}. {sentiment} {item['title']}
-"
-        message += f"   {item['link'][:60]}...
+{item['link'][:60]}...
 
 "
     
-    await update.message.reply_text(message, parse_mode='Markdown', disable_web_page_preview=True)
+    await update.message.reply_text(message, disable_web_page_preview=True)
 
 async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -205,7 +201,7 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     message += f"
 📈 Analyzed {total_articles} articles"
-    await update.message.reply_text(message, parse_mode='Markdown')
+    await update.message.reply_text(message)
 
 async def main():
     init_db()
@@ -224,9 +220,7 @@ async def main():
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     
-    logger.info("✅ Bot running! Send /start to test.")
-    
-    # Run forever
+    logger.info("✅ Bot running!")
     try:
         await asyncio.Event().wait()
     finally:
@@ -235,4 +229,7 @@ async def main():
         await app.shutdown()
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    if not TOKEN:
+        logger.error("TELEGRAM_TOKEN not set!")
+    else:
+        asyncio.run(main())
