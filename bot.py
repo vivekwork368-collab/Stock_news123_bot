@@ -41,56 +41,6 @@ def init_db():
 
 # ------------------ Finnhub Backup ------------------
 def get_price_finnhub(symbol):
-    # ------------------ Smart Symbol Resolver ------------------
-def resolve_symbol(user_input):
-    user_input = user_input.upper()
-
-    # If already NSE format
-    if user_input.endswith(".NS"):
-        return user_input
-
-    # Try direct NSE assumption via Yahoo
-    yahoo_try = user_input + ".NS"
-    try:
-        ticker = yf.Ticker(yahoo_try)
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return yahoo_try
-    except:
-        pass
-
-    # Try exact symbol as given (for US stocks like AAPL)
-    try:
-        ticker = yf.Ticker(user_input)
-        data = ticker.history(period="1d")
-        if not data.empty:
-            return user_input
-    except:
-        pass
-
-    # Use Finnhub search for name-based lookup
-    if FINNHUB_KEY:
-        try:
-            url = f"https://finnhub.io/api/v1/search?q={user_input}&token={FINNHUB_KEY}"
-            r = requests.get(url, timeout=5)
-            data = r.json()
-
-            for result in data.get("result", []):
-                symbol = result.get("symbol", "")
-                exchange = result.get("exchange", "")
-
-                # Prefer NSE stocks
-                if "NS" in symbol or exchange == "NSE":
-                    return symbol
-
-            # Otherwise return first result
-            if data.get("result"):
-                return data["result"][0]["symbol"]
-
-        except:
-            pass
-
-    return None
     if not FINNHUB_KEY:
         return None
 
@@ -101,6 +51,56 @@ def resolve_symbol(user_input):
         return data.get("c")
     except:
         return None
+
+
+# ------------------ Smart Symbol Resolver ------------------
+def resolve_symbol(user_input):
+    user_input = user_input.upper()
+
+    # If already NSE format
+    if user_input.endswith(".NS"):
+        return user_input
+
+    # Try NSE assumption
+    yahoo_try = user_input + ".NS"
+    try:
+        ticker = yf.Ticker(yahoo_try)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return yahoo_try
+    except:
+        pass
+
+    # Try exact symbol (US stocks)
+    try:
+        ticker = yf.Ticker(user_input)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return user_input
+    except:
+        pass
+
+    # Finnhub search
+    if FINNHUB_KEY:
+        try:
+            url = f"https://finnhub.io/api/v1/search?q={user_input}&token={FINNHUB_KEY}"
+            r = requests.get(url, timeout=5)
+            data = r.json()
+
+            for result in data.get("result", []):
+                symbol = result.get("symbol", "")
+                exchange = result.get("exchange", "")
+
+                if "NS" in symbol or exchange == "NSE":
+                    return symbol
+
+            if data.get("result"):
+                return data["result"][0]["symbol"]
+
+        except:
+            pass
+
+    return None
 
 # ------------------ Safe Price Fetch ------------------
 def get_price(symbol):
