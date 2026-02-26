@@ -26,45 +26,23 @@ RSS_FEEDS = [
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
-        CREATE TABLE IF NOT EXISTS user_stocks (
-            user_id INTEGER,
-            symbol TEXT,
-            added_date TEXT,
-            PRIMARY KEY (user_id, symbol)
-        )
-    ''')
+    conn.execute('CREATE TABLE IF NOT EXISTS user_stocks (user_id INTEGER, symbol TEXT, added_date TEXT, PRIMARY KEY (user_id, symbol))')
     conn.commit()
     conn.close()
 
-def get_sentiment_score(title: str) -> int:
-    words = re.findall(r'\bw+\b', title.lower())
+def get_sentiment_score(title):
+    words = re.findall(r'\b\w+\b', title.lower())
     pos = sum(1 for w in words if w in POSITIVE_WORDS)
     neg = sum(1 for w in words if w in NEGATIVE_WORDS)
     return pos - neg
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = "Stock Tracker Bot
-
-"
-    msg += "/add AAPL - Add stock
-"
-    msg += "/remove AAPL - Remove stock
-"
-    msg += "/list - View your stocks
-"
-    msg += "/news AAPL - Latest news
-"
-    msg += "/sentiment - Weekly sentiment
-
-"
-    msg += "SQLite + RSS + yFinance + Rule-based analysis"
-    await update.message.reply_text(msg)
+    await update.message.reply_text("Stock Tracker Bot. /add AAPL - /remove AAPL - /list - /news AAPL - /sentiment")
 
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not context.args:
-        await update.message.reply_text("Usage: /add <symbol> (e.g., /add AAPL)")
+        await update.message.reply_text("Usage: /add SYMBOL")
         return
     
     symbol = context.args[0].upper()
@@ -72,37 +50,35 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ticker = yf.Ticker(symbol)
         info = ticker.info
         if not info.get('symbol'):
-            await update.message.reply_text(f"Invalid symbol: {symbol}")
+            await update.message.reply_text("Invalid symbol")
             return
     except:
-        await update.message.reply_text(f"Invalid symbol: {symbol}")
+        await update.message.reply_text("Invalid symbol")
         return
     
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("INSERT OR IGNORE INTO user_stocks VALUES (?, ?, ?)", 
-                (user_id, symbol, datetime.now().isoformat()))
+    conn.execute("INSERT OR IGNORE INTO user_stocks VALUES (?, ?, ?)", (user_id, symbol, datetime.now().isoformat()))
     conn.commit()
     conn.close()
     
-    await update.message.reply_text(f"Added {symbol} ({info.get('longName', 'N/A')})")
+    await update.message.reply_text("Added " + symbol)
 
 async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if not context.args:
-        await update.message.reply_text("Usage: /remove <symbol>")
+        await update.message.reply_text("Usage: /remove SYMBOL")
         return
     
     symbol = context.args[0].upper()
     conn = sqlite3.connect(DB_PATH)
-    result = conn.execute("DELETE FROM user_stocks WHERE user_id=? AND symbol=?", 
-                         (user_id, symbol)).rowcount
+    result = conn.execute("DELETE FROM user_stocks WHERE user_id=? AND symbol=?", (user_id, symbol)).rowcount
     conn.commit()
     conn.close()
     
     if result:
-        await update.message.reply_text(f"Removed {symbol}")
+        await update.message.reply_text("Removed " + symbol)
     else:
-        await update.message.reply_text(f"{symbol} not in your list")
+        await update.message.reply_text(symbol + " not found")
 
 async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -111,15 +87,15 @@ async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not stocks:
-        await update.message.reply_text("No stocks saved. Add some with /add AAPL")
+        await update.message.reply_text("No stocks. Use /add SYMBOL")
         return
     
-    stock_list = "Your Stocks:
-" + "
-".join([f"- {s[0]}" for s in stocks])
-    await update.message.reply_text(stock_list)
+    msg = "Your stocks:\n"
+    for s in stocks:
+        msg += "- " + s[0] + "\n"
+    await update.message.reply_text(msg)
 
-async def stock_news(symbol: str) -> list:
+async def stock_news(symbol):
     news = []
     symbol_lower = symbol.lower()
     
@@ -127,13 +103,9 @@ async def stock_news(symbol: str) -> list:
         try:
             feed = feedparser.parse(feed_url)
             for entry in feed.entries[:5]:
-                if symbol_lower in entry.title.lower() or symbol_lower in entry.get('summary', '').lower():
+                if symbol_lower in entry.title.lower():
                     score = get_sentiment_score(entry.title)
-                    news.append({
-                        'title': entry.title,
-                        'link': entry.link,
-                        'score': score
-                    })
+                    news.append({'title': entry.title, 'link': entry.link, 'score': score})
         except:
             continue
     
@@ -141,28 +113,27 @@ async def stock_news(symbol: str) -> list:
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("Usage: /news AAPL")
+        await update.message.reply_text("Usage: /news SYMBOL")
         return
     
     symbol = context.args[0].upper()
-    await update.message.reply_text(f"Fetching news for {symbol}...")
+    await update.message.reply_text("Fetching news for " + symbol)
     
     news_items = await stock_news(symbol)
     if not news_items:
-        await update.message.reply_text(f"No recent news found for {symbol}")
+        await update.message.reply_text("No news found")
         return
     
-    message = f"{symbol} News:
-
-"
+    msg = symbol + " News:\n\n"
     for i, item in enumerate(news_items, 1):
-        sentiment = "Bullish" if item['score'] > 0 else "Bearish" if item['score'] < 0 else "Neutral"
-        message += f"{i}. {sentiment}: {item['title']}
-{item['link'][:60]}...
-
-"
+        if item['score'] > 0:
+            msg += str(i) + ". Bullish: " + item['title'][:100] + "\n"
+        elif item['score'] < 0:
+            msg += str(i) + ". Bearish: " + item['title'][:100] + "\n"
+        else:
+            msg += str(i) + ". Neutral: " + item['title'][:100] + "\n"
     
-    await update.message.reply_text(message, disable_web_page_preview=True)
+    await update.message.reply_text(msg)
 
 async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -171,7 +142,7 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not stocks:
-        await update.message.reply_text("No stocks. Add some first!")
+        await update.message.reply_text("No stocks")
         return
     
     sentiment_summary = defaultdict(int)
@@ -184,20 +155,21 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             total_articles += 1
     
     if total_articles == 0:
-        await update.message.reply_text("No recent news found for your stocks.")
+        await update.message.reply_text("No news found")
         return
     
-    message = "Weekly Sentiment:
-
-"
+    msg = "Weekly Sentiment:\n"
     for symbol, score in sentiment_summary.items():
-        trend = "Bullish" if score > 0 else "Bearish" if score < 0 else "Neutral"
-        message += f"- {symbol}: {trend} (score: {score})
-"
+        if score > 0:
+            msg += symbol + ": Bullish (" + str(score) + ")\n"
+        elif score < 0:
+            msg += symbol + ": Bearish (" + str(score) + ")\n"
+        else:
+            msg += symbol + ": Neutral (" + str(score) + ")\n"
     
-    message += f"
-Analyzed {total_articles} articles"
-    await update.message.reply_text(message)
+    msg += "\n"
+Analyzed " + str(total_articles) + " articles"
+    await update.message.reply_text(msg)
 
 async def main():
     init_db()
@@ -225,7 +197,7 @@ async def main():
         await app.shutdown()
 
 if __name__ == '__main__':
-    if not TOKEN:
-        logger.error("TELEGRAM_TOKEN not set!")
-    else:
+    if TOKEN:
         asyncio.run(main())
+    else:
+        print("TELEGRAM_TOKEN not set!")
