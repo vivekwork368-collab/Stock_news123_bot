@@ -250,19 +250,19 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def main():
     init_db()
     logger.info("Stock Tracker Bot starting...")
-
+    
     app = Application.builder().token(TOKEN).build()
-
-    # Register handlers
+    
+    # Add all handlers
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_stock))
     app.add_handler(CommandHandler("remove", remove_stock))
     app.add_handler(CommandHandler("list", list_stocks))
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("sentiment", weekly_sentiment))
-
-    # Run bot
-    await app.run_polling()
+    
+    # ONE LINE - Handles everything!
+    await app.run_polling(drop_pending_updates=True)
 
 # ------------------ Entry ------------------
 if __name__ == '__main__':
