@@ -93,7 +93,7 @@ def resolve_symbol(user_input):
 
     return None
 #------------------ Safe Price Fetch ------------------
-#def get_price(symbol):
+def get_price(symbol):
     if not FINNHUB_KEY:
         print("❌ FINNHUB_KEY missing")
         return None
