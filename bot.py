@@ -168,7 +168,7 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += symbol + ": Neutral (" + str(score) + ")\n"
     
         msg += "\n"
-Analyzed " + str(total_articles) + " articles"
+Analyzed " + str(total_articles) + " articles"\n"
     await update.message.reply_text(msg)
 
 async def main():
