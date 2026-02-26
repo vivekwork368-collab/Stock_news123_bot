@@ -279,7 +279,7 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Unable to fetch price")
 
 # ---------- NEWS ----------
-    async defnews(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text("Usage: /news SYMBOL")
         return
