@@ -16,7 +16,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------
 # Telegram Bot Token
 # ---------------------------
-TOKEN = "YOUR_TELEGRAM_BOT_TOKEN_HERE"  # Replace with your actual token
+TOKEN = "8601899020:AAF6xdQ9Uc2vUqE2J3g_B_iynLoVa83bfGQ"  # Replace with your actual token
 
 # ---------------------------
 # /start command
