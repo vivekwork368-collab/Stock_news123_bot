@@ -92,7 +92,7 @@ def resolve_symbol(user_input):
         print("Symbol resolve error:", e)
 
     return None
-
+#------------------ Safe Price Fetch ------------------
 #def get_price(symbol):
     if not FINNHUB_KEY:
         print("❌ FINNHUB_KEY missing")
@@ -118,9 +118,8 @@ def resolve_symbol(user_input):
 
     except Exception as e:
         print("Price fetch error:", e)
-        return None ------------------ Safe Price Fetch ------------------
-
-
+        return None 
+        
 # ------------------ Sentiment ------------------
 POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
 NEGATIVE_WORDS = {"bearish","drop","fall","crash","loss","decline","weak"}
