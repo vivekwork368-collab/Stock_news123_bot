@@ -166,9 +166,8 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
             msg += symbol + ": Bearish (" + str(score) + ")\n"
         else:
             msg += symbol + ": Neutral (" + str(score) + ")\n"
-    
-        msg += "\nAnalyzed " + str(total_articles) + " articles\n"
-await update.message.reply_text(msg)
+    msg += "\n" + "Analyzed " + str(total_articles) + " articles"
+    await update.message.reply_text(msg)  # 4 spaces before this line
 async def main():
     init_db()
     logger.info("Stock Tracker Bot starting...")
