@@ -10,11 +10,11 @@ if not TOKEN:
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Hello! Bot is working ✅")
 
-async def main():
+def main():
     app = Application.builder().token(TOKEN).build()  # new API
     app.add_handler(CommandHandler("start", start))
     print("Bot running...")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    (main())
