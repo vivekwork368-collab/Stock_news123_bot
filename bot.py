@@ -1,4 +1,5 @@
 import asyncio
+import nest_asyncio
 import logging
 import os
 import sqlite3
@@ -9,6 +10,8 @@ import yfinance as yf
 import feedparser
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
+
+nest_asyncio.apply()  # FIXES event loop conflicts!
 
 # ------------------ Logging Setup ------------------
 logging.basicConfig(
