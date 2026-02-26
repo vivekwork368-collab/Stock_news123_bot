@@ -330,14 +330,14 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     for symbol in stocks:
         news_items = get_google_news(symbol)
 
-if not news_items:
-    news_items = get_finnhub_news(symbol)
-    
-for _, score in news_items:
-    summary[symbol] += score
+        if not news_items:
+            news_items = get_finnhub_news(symbol)
+
+        for _, score in news_items:
+            summary[symbol] += score
 
     msg = "📊 Weekly Sentiment:\n\n"
-    
+
     for symbol, score in summary.items():
         if score > 0:
             msg += f"📈 {symbol}: Bullish ({score})\n"
@@ -347,7 +347,6 @@ for _, score in news_items:
             msg += f"➡ {symbol}: Neutral\n"
 
     await update.message.reply_text(msg)
-
 # ------------------ Run ------------------
 def run_bot():
     print("🚀 Bot Live")
