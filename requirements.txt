@@ -1,5 +1,3 @@
 python-telegram-bot==21.4
-yfinance
-feedparser
-beautifulsoup4
-pandas
+yfinance==0.2.40
+feedparser==6.0.11
