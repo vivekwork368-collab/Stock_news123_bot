@@ -10,18 +10,15 @@ import feedparser
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-# Logging
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv('TELEGRAM_TOKEN')
 DB_PATH = 'stocks.db'
 
-# Sentiment lexicon
 POSITIVE_WORDS = {'bullish', 'gain', 'rise', 'surge', 'rally', 'strong', 'beat', 'upgrade', 'buy', 'positive'}
 NEGATIVE_WORDS = {'bearish', 'fall', 'drop', 'plunge', 'crash', 'weak', 'miss', 'downgrade', 'sell', 'negative'}
 
-# RSS feeds
 RSS_FEEDS = [
     'https://feeds.marketwatch.com/marketwatch/topstories/',
     'https://feeds.reuters.com/reuters/businessNews'
@@ -47,23 +44,22 @@ def get_sentiment_score(title: str) -> int:
     return pos - neg
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "📈 **Stock Tracker Bot**
+    msg = "Stock Tracker Bot
 
 "
-        "/add AAPL - Add stock
+    msg += "/add AAPL - Add stock
 "
-        "/remove AAPL - Remove stock
+    msg += "/remove AAPL - Remove stock
 "
-        "/list - View your stocks
+    msg += "/list - View your stocks
 "
-        "/news AAPL - Latest news
+    msg += "/news AAPL - Latest news
 "
-        "/sentiment - Weekly sentiment
+    msg += "/sentiment - Weekly sentiment
 
 "
-        "✅ SQLite • RSS • yFinance • Rule-based analysis"
-    )
+    msg += "SQLite + RSS + yFinance + Rule-based analysis"
+    await update.message.reply_text(msg)
 
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -76,10 +72,10 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ticker = yf.Ticker(symbol)
         info = ticker.info
         if not info.get('symbol'):
-            await update.message.reply_text(f"❌ Invalid symbol: {symbol}")
+            await update.message.reply_text(f"Invalid symbol: {symbol}")
             return
     except:
-        await update.message.reply_text(f"❌ Invalid symbol: {symbol}")
+        await update.message.reply_text(f"Invalid symbol: {symbol}")
         return
     
     conn = sqlite3.connect(DB_PATH)
@@ -88,7 +84,7 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
     
-    await update.message.reply_text(f"✅ Added {symbol} ({info.get('longName', 'N/A')})")
+    await update.message.reply_text(f"Added {symbol} ({info.get('longName', 'N/A')})")
 
 async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -104,9 +100,9 @@ async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if result:
-        await update.message.reply_text(f"🗑️ Removed {symbol}")
+        await update.message.reply_text(f"Removed {symbol}")
     else:
-        await update.message.reply_text(f"❌ {symbol} not in your list")
+        await update.message.reply_text(f"{symbol} not in your list")
 
 async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
@@ -115,12 +111,12 @@ async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not stocks:
-        await update.message.reply_text("📭 No stocks saved. Add some with /add AAPL")
+        await update.message.reply_text("No stocks saved. Add some with /add AAPL")
         return
     
-    stock_list = "📊 **Your Stocks:**
+    stock_list = "Your Stocks:
 " + "
-".join([f"• {s[0]}" for s in stocks])
+".join([f"- {s[0]}" for s in stocks])
     await update.message.reply_text(stock_list)
 
 async def stock_news(symbol: str) -> list:
@@ -149,19 +145,19 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     symbol = context.args[0].upper()
-    await update.message.reply_text(f"📰 Fetching news for {symbol}...")
+    await update.message.reply_text(f"Fetching news for {symbol}...")
     
     news_items = await stock_news(symbol)
     if not news_items:
         await update.message.reply_text(f"No recent news found for {symbol}")
         return
     
-    message = f"📰 **{symbol} News:**
+    message = f"{symbol} News:
 
 "
     for i, item in enumerate(news_items, 1):
-        sentiment = "🟢" if item['score'] > 0 else "🔴" if item['score'] < 0 else "🟡"
-        message += f"{i}. {sentiment} {item['title']}
+        sentiment = "Bullish" if item['score'] > 0 else "Bearish" if item['score'] < 0 else "Neutral"
+        message += f"{i}. {sentiment}: {item['title']}
 {item['link'][:60]}...
 
 "
@@ -175,7 +171,7 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.close()
     
     if not stocks:
-        await update.message.reply_text("📭 No stocks. Add some first!")
+        await update.message.reply_text("No stocks. Add some first!")
         return
     
     sentiment_summary = defaultdict(int)
@@ -191,21 +187,21 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("No recent news found for your stocks.")
         return
     
-    message = "📊 **Weekly Sentiment:**
+    message = "Weekly Sentiment:
 
 "
     for symbol, score in sentiment_summary.items():
-        trend = "🟢 Bullish" if score > 0 else "🔴 Bearish" if score < 0 else "🟡 Neutral"
-        message += f"• {symbol}: {trend} (score: {score})
+        trend = "Bullish" if score > 0 else "Bearish" if score < 0 else "Neutral"
+        message += f"- {symbol}: {trend} (score: {score})
 "
     
     message += f"
-📈 Analyzed {total_articles} articles"
+Analyzed {total_articles} articles"
     await update.message.reply_text(message)
 
 async def main():
     init_db()
-    logger.info("🚀 Stock Tracker Bot starting...")
+    logger.info("Stock Tracker Bot starting...")
     
     app = Application.builder().token(TOKEN).build()
     
@@ -220,7 +216,7 @@ async def main():
     await app.start()
     await app.updater.start_polling(drop_pending_updates=True)
     
-    logger.info("✅ Bot running!")
+    logger.info("Bot running!")
     try:
         await asyncio.Event().wait()
     finally:
