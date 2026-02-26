@@ -40,7 +40,7 @@ def init_db():
     conn.close()
 
 # ------------------ Finnhub Backup ------------------
-defget_price_finnhub(symbol):
+def get_price_finnhub(symbol):
     if not FINNHUB_KEY:
         return None
 
@@ -226,13 +226,13 @@ async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Usage: /price SYMBOL")
         return
 
-user_input = " ".join(context.args)
-symbol = resolve_symbol(user_input)
+    user_input = " ".join(context.args)
+    symbol = resolve_symbol(user_input)
 
-if not symbol:
-    await update.message.reply_text("❌ Could not find stock")
-    return
-    
+    if not symbol:
+        await update.message.reply_text("❌ Could not find stock")
+        return
+
     await update.message.reply_text(f"Fetching price for {symbol}...")
 
     price_value = get_price(symbol)
