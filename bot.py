@@ -332,10 +332,12 @@ async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 if not news_items:
     news_items = get_finnhub_news(symbol)
-        for _, score in news_items:
-            summary[symbol] += score
+    
+for _, score in news_items:
+    summary[symbol] += score
 
     msg = "📊 Weekly Sentiment:\n\n"
+    
     for symbol, score in summary.items():
         if score > 0:
             msg += f"📈 {symbol}: Bullish ({score})\n"
