@@ -1,4 +1,3 @@
-import asyncio
 import nest_asyncio
 import logging
 import os
@@ -8,12 +7,13 @@ from datetime import datetime
 from collections import defaultdict
 import yfinance as yf
 import feedparser
+import requests
 from telegram import Update
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-nest_asyncio.apply()  # FIXES event loop conflicts!
+nest_asyncio.apply()
 
-# ------------------ Logging Setup ------------------
+# ------------------ Logging ------------------
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -21,96 +21,89 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ------------------ Config ------------------
-TOKEN = os.getenv('TELEGRAM_TOKEN')
-DB_PATH = 'stocks.db'
-
-POSITIVE_WORDS = {
-    'bullish','gain','rise','surge','rally','strong','beat','upgrade','buy',
-    'positive','growth','profit'
-}
-NEGATIVE_WORDS = {
-    'bearish','fall','drop','plunge','crash','weak','miss','downgrade','sell',
-    'negative','loss','decline'
-}
-
-RSS_FEEDS = [
-    # Global Business News
-    'https://feeds.marketwatch.com/marketwatch/topstories/',
-    'https://feeds.reuters.com/reuters/businessNews',
-    'https://rss.cnn.com/rss/money_latest.rss',
-    'https://feeds.bloomberg.com/markets/news.rss',
-
-    # Tech/Stock Specific
-    'https://feeds.aap.com.au/feeds/market.rss',
-    'https://feeds.forbes.com/forbes/headlines',
-
-    # Indian Markets (.NS stocks)
-    'https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
-    'https://www.moneycontrol.com/rss/latestnews.xml',
-
-    # Finance Focused
-    'https://www.investing.com/rss/news.rss',
-    'https://feeds.benzinga.com/benzinga-feeds',
-    'https://finance.yahoo.com/news/rssindex'
-]
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+FINNHUB_KEY = os.getenv("FINNHUB_KEY")
+DB_PATH = "stocks.db"
 
 # ------------------ Database ------------------
 def init_db():
     conn = sqlite3.connect(DB_PATH)
-    conn.execute('''
+    conn.execute("""
         CREATE TABLE IF NOT EXISTS user_stocks (
-            user_id INTEGER, 
-            symbol TEXT, 
-            added_date TEXT, 
+            user_id INTEGER,
+            symbol TEXT,
+            added_date TEXT,
             PRIMARY KEY (user_id, symbol)
         )
-    ''')
+    """)
     conn.commit()
     conn.close()
 
-# ------------------ Sentiment Analysis ------------------
+# ------------------ Finnhub Backup ------------------
+def get_price_finnhub(symbol):
+    if not FINNHUB_KEY:
+        return None
+
+    try:
+        url = f"https://finnhub.io/api/v1/quote?symbol={symbol}&token={FINNHUB_KEY}"
+        r = requests.get(url, timeout=5)
+        data = r.json()
+        return data.get("c")
+    except:
+        return None
+
+# ------------------ Safe Price Fetch ------------------
+def get_price(symbol):
+    # Try Yahoo (safe endpoint)
+    try:
+        ticker = yf.Ticker(symbol)
+        data = ticker.history(period="1d")
+        if not data.empty:
+            return float(data["Close"].iloc[-1])
+    except:
+        pass
+
+    # Fallback to Finnhub
+    return get_price_finnhub(symbol)
+
+# ------------------ Sentiment ------------------
+POSITIVE_WORDS = {"bullish","gain","rise","surge","rally","strong","profit","growth"}
+NEGATIVE_WORDS = {"bearish","drop","fall","crash","loss","decline","weak"}
+
 def get_sentiment_score(title):
-    words = re.findall(r'\b\w+\b', title.lower())  # fixed regex
+    words = re.findall(r"\b\w+\b", title.lower())
     pos = sum(1 for w in words if w in POSITIVE_WORDS)
     neg = sum(1 for w in words if w in NEGATIVE_WORDS)
     return pos - neg
 
-# ------------------ Bot Commands ------------------
+# ------------------ RSS Feeds ------------------
+RSS_FEEDS = [
+    "https://feeds.reuters.com/reuters/businessNews",
+    "https://feeds.bloomberg.com/markets/news.rss",
+    "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+    "https://www.moneycontrol.com/rss/latestnews.xml"
+]
+
+# ------------------ Commands ------------------
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "📈 *Stock Tracker Bot*\n\n"
-        "Commands:\n"
-        "/add AAPL - Add stock\n"
-        "/add TCS.NS - Add Indian stock\n"
-        "/remove AAPL - Remove stock\n"
-        "/list - Your watchlist\n"
-        "/news AAPL - Latest news\n"
-        "/sentiment - Portfolio analysis"
+        "📈 Stock Tracker Bot\n\n"
+        "/add SYMBOL\n"
+        "/remove SYMBOL\n"
+        "/list\n"
+        "/price SYMBOL\n"
+        "/news SYMBOL\n"
+        "/sentiment"
     )
 
+# ---------- ADD STOCK (No Validation) ----------
 async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     if not context.args:
-        await update.message.reply_text(
-            "Usage: /add SYMBOL\n\n"
-            "Examples:\n"
-            "/add AAPL\n"
-            "/add TCS.NS\n"
-            "/add RELIANCE.NS"
-        )
+        await update.message.reply_text("Usage: /add SYMBOL")
         return
 
+    user_id = update.effective_user.id
     symbol = context.args[0].upper()
-    # Optional: Check if valid ticker
-    try:
-        ticker = yf.Ticker(symbol)
-        info = ticker.info
-        if not info.get('symbol'):
-            await update.message.reply_text("❌ Invalid symbol")
-            return
-    except:
-        await update.message.reply_text("❌ Invalid symbol")
-        return
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute(
@@ -120,68 +113,82 @@ async def add_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
     conn.commit()
     conn.close()
 
-    await update.message.reply_text(f"✅ Added *{symbol}* to watchlist!")
+    await update.message.reply_text(f"✅ Added {symbol} to watchlist")
 
+# ---------- REMOVE ----------
 async def remove_stock(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
     if not context.args:
         await update.message.reply_text("Usage: /remove SYMBOL")
         return
 
+    user_id = update.effective_user.id
     symbol = context.args[0].upper()
+
     conn = sqlite3.connect(DB_PATH)
     result = conn.execute(
-        "DELETE FROM user_stocks WHERE user_id=? AND symbol=?", 
+        "DELETE FROM user_stocks WHERE user_id=? AND symbol=?",
         (user_id, symbol)
     ).rowcount
     conn.commit()
     conn.close()
 
     if result:
-        await update.message.reply_text(f"🗑️ Removed {symbol}")
+        await update.message.reply_text(f"🗑 Removed {symbol}")
     else:
-        await update.message.reply_text(f"{symbol} not found in watchlist")
+        await update.message.reply_text("Symbol not found")
 
+# ---------- LIST ----------
 async def list_stocks(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     conn = sqlite3.connect(DB_PATH)
     stocks = [row[0] for row in conn.execute(
-        "SELECT symbol FROM user_stocks WHERE user_id=?", (user_id,)
+        "SELECT symbol FROM user_stocks WHERE user_id=?",
+        (user_id,)
     ).fetchall()]
     conn.close()
 
     if not stocks:
-        await update.message.reply_text("📭 No stocks. Use /add SYMBOL")
+        await update.message.reply_text("📭 Watchlist empty")
         return
 
-    msg = "📈 *Your Watchlist:*\n\n"
+    msg = "📈 Your Watchlist:\n\n"
     for s in stocks:
         msg += f"• {s}\n"
+
     await update.message.reply_text(msg)
 
-# ------------------ News ------------------
+# ---------- PRICE ----------
+async def price(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text("Usage: /price SYMBOL")
+        return
+
+    symbol = context.args[0].upper()
+    await update.message.reply_text(f"Fetching price for {symbol}...")
+
+    price_value = get_price(symbol)
+
+    if price_value:
+        await update.message.reply_text(f"💰 {symbol}: {price_value}")
+    else:
+        await update.message.reply_text("❌ Unable to fetch price")
+
+# ---------- NEWS ----------
 async def stock_news(symbol):
     news = []
-    symbol_lower = symbol.lower().replace('.ns', '').replace('.bo', '').replace('.l', '')
+    symbol_clean = symbol.lower().replace(".ns","")
 
-    for feed_url in RSS_FEEDS:
+    for url in RSS_FEEDS:
         try:
-            feed = feedparser.parse(feed_url)
+            feed = feedparser.parse(url)
             for entry in feed.entries[:10]:
-                title_lower = entry.title.lower()
-                if (symbol_lower in title_lower or 
-                    symbol.lower() in title_lower or
-                    symbol.replace('.NS','').lower() in title_lower or
-                    symbol.replace('.BO','').lower() in title_lower):
+                if symbol_clean in entry.title.lower():
                     score = get_sentiment_score(entry.title)
-                    news.append({
-                        'title': entry.title[:120],
-                        'link': entry.link,
-                        'score': score,
-                        'source': feed.feed.get('title','News')
-                    })
+                    news.append((entry.title[:120], score))
         except:
             continue
+
     return news[:5]
 
 async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -190,96 +197,71 @@ async def news(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     symbol = context.args[0].upper()
-    await update.message.reply_text(f"🔍 Fetching news for {symbol}...")
+    items = await stock_news(symbol)
 
-    news_items = await stock_news(symbol)
-    if not news_items:
-        await update.message.reply_text(f"❌ No news found for {symbol}")
+    if not items:
+        await update.message.reply_text("No news found")
         return
 
-    msg = f"📰 *{symbol} News* (from 10+ sources):\n\n"
-    for i, item in enumerate(news_items, 1):
-        if item['score'] > 0:
-            msg += f"{i}. 📈 *Bullish*: {item['title']}\n"
-        elif item['score'] < 0:
-            msg += f"{i}. 📉 *Bearish*: {item['title']}\n"
-        else:
-            msg += f"{i}. ➡️ *Neutral*: {item['title']}\n"
-        msg += f"   {item['source']}\n\n"
+    msg = f"📰 {symbol} News:\n\n"
+    for title, score in items:
+        sentiment = "📈 Bullish" if score > 0 else "📉 Bearish" if score < 0 else "➡ Neutral"
+        msg += f"{sentiment}: {title}\n\n"
 
     await update.message.reply_text(msg)
 
-# ------------------ Weekly Sentiment ------------------
+# ---------- SENTIMENT ----------
 async def weekly_sentiment(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+
     conn = sqlite3.connect(DB_PATH)
     stocks = [row[0] for row in conn.execute(
-        "SELECT symbol FROM user_stocks WHERE user_id=?", (user_id,)
+        "SELECT symbol FROM user_stocks WHERE user_id=?",
+        (user_id,)
     ).fetchall()]
     conn.close()
 
     if not stocks:
-        await update.message.reply_text("📭 No stocks in watchlist")
+        await update.message.reply_text("No stocks in watchlist")
         return
 
-    sentiment_summary = defaultdict(int)
-    total_articles = 0
-
-    await update.message.reply_text(f"🔄 Analyzing {len(stocks)} stocks...")
+    summary = defaultdict(int)
 
     for symbol in stocks:
         news_items = await stock_news(symbol)
-        for item in news_items:
-            sentiment_summary[symbol] += item['score']
-            total_articles += 1
+        for _, score in news_items:
+            summary[symbol] += score
 
-    if total_articles == 0:
-        await update.message.reply_text("❌ No news found for your stocks")
-        return
-
-    msg = "📊 *Weekly Sentiment Analysis*\n\n"
-    for symbol, score in sentiment_summary.items():
+    msg = "📊 Weekly Sentiment:\n\n"
+    for symbol, score in summary.items():
         if score > 0:
-            msg += f"📈 {symbol}: *Bullish* ({score})\n"
+            msg += f"📈 {symbol}: Bullish ({score})\n"
         elif score < 0:
-            msg += f"📉 {symbol}: *Bearish* ({score})\n"
+            msg += f"📉 {symbol}: Bearish ({score})\n"
         else:
-            msg += f"➡️ {symbol}: *Neutral* ({score})\n"
+            msg += f"➡ {symbol}: Neutral\n"
 
-    msg += f"\n📈 Analyzed {total_articles} articles from 10+ sources"
     await update.message.reply_text(msg)
 
-# ------------------ Main ------------------
+# ------------------ Run ------------------
 def run_bot():
-    """Skip problematic async initialization"""
-    print("🚀 Stock Tracker Bot LIVE!")
-    
-    # Create application WITHOUT auto-initialization
-    builder = Application.builder().token(TOKEN)
-    app = builder.build()
-    
-    # Add handlers FIRST
+    print("🚀 Bot Live")
+
+    app = Application.builder().token(TOKEN).build()
+
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add", add_stock))
     app.add_handler(CommandHandler("remove", remove_stock))
     app.add_handler(CommandHandler("list", list_stocks))
+    app.add_handler(CommandHandler("price", price))
     app.add_handler(CommandHandler("news", news))
     app.add_handler(CommandHandler("sentiment", weekly_sentiment))
-    
-    # Start polling with custom request settings
-    app.run_polling(
-        drop_pending_updates=True,
-        timeout=30,  # Longer timeout
-        bootstrap_retries=-1,  # Retry forever
-        read_timeout=30,
-        write_timeout=30,
-        connect_timeout=30
-    )
 
-if __name__ == '__main__':
+    app.run_polling(drop_pending_updates=True)
+
+if __name__ == "__main__":
     init_db()
-    print("📈 Initializing database...")
     if TOKEN:
         run_bot()
     else:
-        print("❌ TELEGRAM_TOKEN missing!")
+        print("TELEGRAM_TOKEN missing")
