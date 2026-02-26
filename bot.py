@@ -14,7 +14,7 @@ async def main():
     app = Application.builder().token(TOKEN).build()  # new API
     app.add_handler(CommandHandler("start", start))
     print("Bot running...")
-    app.run_polling(drop_pending_updates=true)
+    app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
     asyncio.run(main())
