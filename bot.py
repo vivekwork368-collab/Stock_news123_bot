@@ -270,3 +270,19 @@ if __name__ == '__main__':
         asyncio.run(main())
     else:
         print("❌ TELEGRAM_TOKEN not set!")
+if __name__ == '__main__':
+    import uvicorn
+    from fastapi import FastAPI
+    app_fastapi = FastAPI()
+    
+    @app_fastapi.get("/")
+    async def root():
+        return {"status": "Bot running"}
+    
+    if TOKEN:
+        # Start bot in thread
+        import threading
+        threading.Thread(target=lambda: main(), daemon=True).start()
+        uvicorn.run(app_fastapi, host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+    else:
+        print("TELEGRAM_TOKEN not set!")
